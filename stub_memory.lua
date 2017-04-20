@@ -31,6 +31,9 @@ if memory == nil then
     memory._buffer[address] = value
   end
 
+  function memory.readbyterange(address, length)
+    error('stub memory.readbyterange() unimplemented')
+  end
   function memory.readbyte(address)
     return memory._read(address)
   end
