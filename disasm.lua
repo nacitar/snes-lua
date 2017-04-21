@@ -6,6 +6,8 @@
 local ram = require 'ram'
 
 
+local module_index = ram.Field(0x7E0010, 1, 'u')  -- unused?
+local submodule_index = ram.Field(0x7E0011, 1, 'u')
 local sub_submodule_index = ram.Field(0x7E00B0, 1, 'u')  -- really 1?
 local incap_timer = ram.Field(0x7E0046, 1, 'u')  -- really 1?
 local scr_transition_bf2 = ram.Field(0x7E0416, 2, 'u')  -- values?
@@ -19,6 +21,10 @@ local player_y = ram.player_y  -- $20
 local player_y_cycle = ram.player_y_cycle  -- $30
 local player_x_cycle = ram.player_x_cycle  -- $31
 
+
+-- Module_Overworld takes $11, shifts it left 1 bit, stores in X
+-- then  jsr(.submodules, X), within pool Module_Overworld
+--   dw $B528 ; = $13528*              ; 0x2A -
 function Overworld_ScrollMap()
   -- via -- JSR Overworld_ScrollMap     ; $17273 IN ROM
   error('unimplemented')
@@ -26,11 +32,6 @@ end
 
 function unknown_function_BB90()
   -- via -- JSR $BB90 ; $13B90 IN ROM
-  error('unimplemented')
-end
-
-function unknown_function_9583()
-  -- via -- dw $9583 ; = $11583*                                                     
   error('unimplemented')
 end
 
@@ -43,14 +44,17 @@ function max_step(position, destination)
   end
   return result
 end
---; *$13528-$13531 JUMP LOCATION                                               
-function jump_func()
-  if sub_submodule_index:read() == 0 then
-    --  dw $B532 ; = $13532*                                                     
+--; *$13528-$13531 JUMP LOCATION
+function jump_func_B528()
+  local index = sub_submodule_index:read()
+  if index == 0 then
+    --  dw $B532 ; = $13532*
     complete_rewrite()
-  else
-    --  dw $9583 ; = $11583*                                                     
+  elseif index == 1 then
+    --  dw $9583 ; = $11583*
     unknown_function_9583()
+  else
+    error('probable crash')
   end
 end
 -- Bank02.asm line 8138
@@ -85,7 +89,7 @@ function branched_set_speeds()
 
   ---- X STUFF ----
   A = player_x:read()  -- LDA $22
-  if A > x_dest:read() then 
+  if A > x_dest:read() then
     tmp_x:dec()  -- DEC $02
     A = A - 1  -- DEC A
     if A ~= x_dest:read() then
@@ -156,7 +160,7 @@ function literal_set_speeds()
   ---- X STUFF ----
   A = player_x:read()  -- LDA $22
   -- : CMP $7EC186
-  if A == x_dest:read() then 
+  if A == x_dest:read() then
     goto BRANCH_ALPHA  -- : BEQ BRANCH_ALPHA
   elseif A < x_dest:read() then
     goto BRANCH_BETA  -- : BCC BRANCH_BETA
@@ -238,4 +242,100 @@ function literal_set_speeds()
   Overworld_ScrollMap()  -- JSR Overworld_ScrollMap     ; $17273 IN ROM
   ::BRANCH_ZETA::
   return  -- RTS
+end
+
+
+
+
+function unknown_function_9583()
+
+  -- via -- dw $9583 ; = $11583*
+  error('unimplemented')
+  -- A is 16-bit  -- REP #$20
+  player_y:write(y_dest:read())  -- LDA $7EC184 : STA $20
+  player_x:write(x_dest:read())  -- LDA $7EC186 : STA $22
+
+
+  Field(0x7E0600, 2, 'u'):write(Field(0x7EC188, 2, 'u'):read())  -- LDA $7EC188 : STA $0600
+  Field(0x7E0604, 2, 'u'):write(Field(0x7EC18A, 2, 'u'):read())  -- LDA $7EC18A : STA $0604
+  Field(0x7E0608, 2, 'u'):write(Field(0x7EC18C, 2, 'u'):read())  -- LDA $7EC18C : STA $0608
+  Field(0x7E060C, 2, 'u'):write(Field(0x7EC18E, 2, 'u'):read())  -- LDA $7EC18E : STA $060C
+  Field(0x7E0610, 2, 'u'):write(Field(0x7EC190, 2, 'u'):read())  -- LDA $7EC190 : STA $0610
+  Field(0x7E0612, 2, 'u'):write(Field(0x7EC192, 2, 'u'):read())  -- LDA $7EC192 : STA $0612
+  Field(0x7E0614, 2, 'u'):write(Field(0x7EC194, 2, 'u'):read())  -- LDA $7EC194 : STA $0614
+  Field(0x7E0616, 2, 'u'):write(Field(0x7EC196, 2, 'u'):read())  -- LDA $7EC196 : STA $0616
+    
+  -- LDA $1B : AND.w #$00FF
+  if bit.band(ram.player_not_overworld:read(), 0xFF) == 0 then
+    goto OUTDOORS  -- : BEQ .outdoors
+  end
+    
+  Field(0x7E0618, 2, 'u'):write(Field(0x7EC198, 2, 'u'):read())  -- LDA $7EC198 : STA $0618
+    
+    INC #2 : STA $061A
+    
+    LDA $7EC19A : STA $061C
+    
+    INC #2 : STA $061E
+
+  ::OUTDOORS::
+
+    LDA $7EC19C : STA $A6
+    LDA $7EC19E : STA $A9
+    
+    LDA $1B : AND.w #$00FF : BNE .indoors
+
+    LDA $0618 : DEC #2 : STA $061A
+    LDA $061C : DEC #2 : STA $061E
+
+  ::INDOORS::
+
+    SEP #$20
+    
+    LDA $7EC1A6 : STA $2F
+    LDA $7EC1A7 : STA $EE
+    
+    LDA $7EC1A8 : STA $0476
+    
+    LDA $7EC1A9 : STA $6C
+    
+    LDA $7EC1AA : STA $A4
+    
+    STZ $4B
+    
+    LDA.b #$90 : STA $031F
+    
+    JSR $8EC9 ; $10EC9 IN ROM
+    
+    STZ $037B
+    
+    JSL $07984B ; $3984B IN ROM
+    
+    STZ $02F9
+    
+    JSL Tagalong_Init
+    
+    STZ $0642
+    STZ $0200
+    STZ $B0
+    STZ $0418
+    STZ $11
+    
+    LDA $7EF36D : BNE .notDead
+    
+    LDA.b #$00 : STA $7EF36D
+    
+    LDA $1C : STA $7EC211
+    LDA $1D : STA $7EC212
+    
+    LDA $10 : STA $010C
+    
+    LDA.b #$12 : STA $10
+    LDA.b #$01 : STA $11
+    
+    STZ $031F
+
+.notDead
+
+    RTS
 end
