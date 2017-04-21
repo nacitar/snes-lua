@@ -67,8 +67,8 @@ function complete_rewrite()
     incap_timer:write(0)  -- STZ $46
   end
 
-  player_y_cycle.write(steps.y)
-  player_x_cycle.write(steps.x)
+  player_y_cycle.write(tmp_y:read())
+  player_x_cycle.write(tmp_x:read())
 
   unknown_function_BB90()
   if scr_transition_bf2:read() ~= 0 then
