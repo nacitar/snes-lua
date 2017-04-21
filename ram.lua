@@ -73,6 +73,18 @@ function Field:write(value)
   end
 end
 
+function Field:inc()
+  local value = self:read() + 1
+  self:write(value)
+  return value
+end
+
+function Field:dec()
+  local value = self:read() - 1
+  self:write(value)
+  return value
+end
+
 return {
   Field = Field,
 
