@@ -502,6 +502,15 @@ local link_pick_up_state = ram.Unsigned(0x7E0309, 1)
 
 local special_effects_array = ram.Array(0x7E0C4A, 1, 10)
 
+local unknown_falling_hole_related = ram.Unsigned(0x7E02CA, 1)
+
+local link_aux_state = ram.Unsigned(0x7E004D, 1)
+  -- An Auxiliary Link handler.
+  -- 0x00 - ground state (normal)
+  -- 0x01 - the recoil status
+  -- 0x02 - jumping in and out of water?
+  -- 0x04 - swimming state.
+
 function Player_ResetState(A)
   error('unimplemented')
   return A
@@ -655,43 +664,52 @@ end
 -- {
 -- RELEVANT: dw $8109 ; = $38109* 0x00 - Ground state (normal mode)
 function ground_state_handler()  -- name?!
-    cache_state_if_on_overworld()  -- JSR $F514 ; $3F514 IN ROM
+  cache_state_if_on_overworld()  -- JSR $F514 ; $3F514 IN ROM
 
-    -- LDA $F5 : AND.b #$80
-    if bit.band(filtered_jp2_main:read(), 0x80) == 0 then
-      goto NOTDEBUGWALLWALK  -- : BEQ .notDebugWallWalk
-    end
+  -- LDA $F5 : AND.b #$80
+  if bit.band(filtered_jp2_main:read(), 0x80) == 0 then
+    goto NOTDEBUGWALLWALK  -- : BEQ .notDebugWallWalk
+  end
 
-    -- ; \tcrf(confirmed, submitted) Debug feature where if you pressed the 
-    -- ; second control pad's B button It lets you walk through all walls.
+  -- ; \tcrf(confirmed, submitted) Debug feature where if you pressed the 
+  -- ; second control pad's B button It lets you walk through all walls.
 
-    -- LDA $037F : EOR.b #$01 : STA $037F
-    -- NOTE: could just set it to 1, i think
-    debug_wall_walk:write(bit.bor(debug_wall_walk:read(), 0x01))
+  -- LDA $037F : EOR.b #$01 : STA $037F
+  -- NOTE: could just set it to 1, i think
+  debug_wall_walk:write(bit.bor(debug_wall_walk:read(), 0x01))
 
-.notDebugWallWalk
+  ::NOTDEBUGWALLWALK::
 
-    ; $382DA IN ROM; Checks whether Link can move.
-    ; C clear = Link can move. C set = opposite.
-    JSR $82DA : BCC .linkCanMove
-    
-    ; Link can't move... is Link in the Temp Bunny mode?
-    ; No... so do nothing extra.
-    LDA $5D : CMP.b #$17 : BNE .notTempBunnyCantMove
-    
-    ; How to handle a permabunny.
-    BRL BRANCH_$383A1
+  -- ; $382DA IN ROM; Checks whether Link can move.
+  -- ; C clear = Link can move. C set = opposite.
+  if can_move() then  -- JSR $82DA
+    goto LINKCANMOVE  -- : BCC .linkCanMove
+  end
+  -- The below comments/labels are wrong, this is checking for PERMANENT BUNNY
+  -- ; Link can't move... is Link in the Temp Bunny mode?
+  -- ; No... so do nothing extra.
+  if link_handler_state:read() ~= 0x17 then  -- LDA $5D : CMP.b #$17
+    -- NOTE: the asm is incorrectly documented; this isn't tempbunny, it's
+    -- permabunny mode!
+    goto NOTPERMABUNNYCANTMOVE  -- : BNE .notTempBunnyCantMove
+  end
 
-.notTempBunnyCantMove
+  -- TODO ; How to handle a permabunny.
+  unknown_bunny_383A1()  -- BRL BRANCH_$383A1
 
-    RTS
+  ::NOTPERMABUNNYCANTMOVE::  -- .notTempBunnyCantMove
 
-.linkCanMove
+  return  -- RTS
 
-    STZ $02CA
-    
-    ; Is Link in a ground state? Yes...
-    LDA $4D : BEQ BRANCH_DELTA
+  ::LINKCANMOVE::
+
+  unknown_falling_hole_related:write(0)  -- STZ $02CA
+
+  -- ; Is Link in a ground state? Yes...
+  if link_aux_state:read() == 0 then  -- LDA $4D 
+    goto BRANCH_DELTA  -- : BEQ BRANCH_DELTA
+  end
+
 
 ; *$38130 ALTERNATE ENTRY POINT
 
