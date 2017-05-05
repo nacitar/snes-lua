@@ -2,6 +2,7 @@
 
 -- https://wiki.superfamicom.org/snes/show/65816+Reference
 -- https://wiki.superfamicom.org/snes/show/Jay%27s+ASM+Tutorial
+-- http://problemkaputt.de/fullsnes.htm
 
 local ram = require 'ram'
 
@@ -113,7 +114,184 @@ local transition_scroll_target_down = ram.Unsigned(0x7E00612, 2)
 local transition_scroll_target_left = ram.Unsigned(0x7E00614, 2)
 local transition_scroll_target_right = ram.Unsigned(0x7E00616, 2)
 
+local bunny_transform_timer = ram.Unsigned(0x7E02E2, 1)
 
+local link_sprite_is_bunny = ram.Unsigned(0x7E02E0, 1)
+local mirror_link_sprite_is_bunny = ram.Unsigned(0x7E0056, 1)
+
+local tempbunny_timer = ram.Unsigned(0x7E03F5, 2)
+  -- The timer for Link's tempbunny state.
+  -- When it counts down he returns to his normal state.
+  -- When Link is hit it always falls to zero.
+  -- Is always set to 0x100 when a yellow hunter (transformer) hits him.
+  -- If Link is not in normal mode, however, it will have no effect on him.
+  -- The value is given in frames, so if the value written is 0x80, you
+  -- will be a bunny for 128 frames
+
+local tempbunny_needs_poof = ram.Unsigned(0x7E03F7, 1)
+  -- Flag indicating whether the "poof" needs to occur for Link to transform
+  -- into the tempbunny.
+
+local link_handler_state = ram.Unsigned(0x7E005D, 1)
+  -- Link Handler or "State"
+  -- 0x0 - ground state
+  -- 0x1 - falling into a hole
+  -- 0x2 - recoil from hitting wall / enemies
+  -- 0x3 - spin attacking
+  -- 0x4 - swimming
+  -- 0x5 - Turtle Rock platforms
+  -- 0x6 recoil again (other movement)
+  -- 0x7 - hit by Agahnim<92>s bug zapper
+  -- 0x8 - using ether medallion
+  -- 0x9 - using bombos medallion
+  -- 0xA - using quake medallion
+  -- 0xB - ???
+  -- 0xC - ???
+  -- 0xD - ???
+  -- 0xE - ???
+  -- 0xF - ???
+  -- 0x10 - ???
+  -- 0x11 - falling off a ledge
+  -- 0x12 - used when coming out of a dash by pressing a direction other than the dash direction
+  -- 0x13 - hookshot
+  -- 0x14 - magic mirror
+  -- 0x15 - holding up an item
+  -- 0x16 - asleep in his bed
+  -- 0x17 - permabunny
+  -- 0x18 - stuck under a heavy rock
+  -- 0x19 - Receiving Ether Medallion
+  -- 0x1A - Receiving Bombos Medallion
+  -- 0x1B - Opening Desert Palace
+  -- 0x1C - temporary bunny
+  -- 0x1D - Rolling back from Gargoyle gate or PullForRupees object
+  -- 0x1E - The actual spin attack motion.
+
+local link_carrying_bitfield = ram.Unsigned(0x7E0308, 1)
+  -- Bit 7 is set when Link is carrying something. Bit 1 set when Link is praying?
+local link_pick_up_state = ram.Unsigned(0x7E0309, 1)
+  -- 0: nothing. 1: picking up something. 2: throwing something or halfway done picking up something
+
+local special_effects_array = ram.Array(0x7E0C4A, 1, 10)
+
+local unknown_falling_hole_related = ram.Unsigned(0x7E02CA, 1)
+
+local link_aux_state = ram.Unsigned(0x7E004D, 1)
+  -- An Auxiliary Link handler.
+  -- 0x00 - ground state (normal)
+  -- 0x01 - the recoil status
+  -- 0x02 - jumping in and out of water?
+  -- 0x04 - swimming state.
+
+local link_brandished_item = ram.Unsigned(0x7E0301, 1)
+  -- bmuaethr
+  -- When non zero, Link has something in his hand, poised to strike. It's
+  -- intended that only one bit in this flag be set at any time, though.
+  --
+  --  b - Boomerang
+  --  m - Magic Powder
+  --  u - Unused
+  --  a - Bow and Arrow
+  --  e - Tested for, but doesn't seem to correspond to any actual item or
+  --      action. Possibly could indicate an item that was cut from the game
+  --      during development. It is, in fact, tested for simultaneously with
+  --      the hammer in many locations. Perhaps this suggests another
+  --      hammer-like item was in the works.
+  --  t - Tested for exclusively with the 'r' bit, but no code seems to set this
+  --      particular bit. Perhaps at one point the bits for the two rods were
+  --      separate at some point?
+  --  h - Hammer
+  --  r - Ice Rod or Fire Rod
+
+local link_pose = ram.Unsigned(0x7E037A, 1)
+  -- Puts Link in various positions, 1 - shovel, 2 - praying, etc...
+  -- cane of somaria. May also have something to do with bombs?
+
+local some_debug_value_01 = ram.Unsigned(0x7E020B, 1)
+  -- Seems to be a debug value for Module 0x0E.0x01
+
+local unused_but_written_to_01 = ram.Unsigned(0x7E0350, 1)
+  -- written to, but never read
+
+local unknown_01 = ram.Unsigned(0x7E030D, 1)
+  -- ???
+local unknown_02 = ram.Unsigned(0x7E0025, 1)
+  -- ???  something to do with zoom when in attract mode, but unsure otherwise
+local unknown_03 = ram.Unsigned(0x7E0300, 1)
+  -- Link's state changes? Happens when using boomerang.                          
+  -- Also related to electrocution maybe?  
+
+
+local seems_always_0 = ram.Unsigned(0x7E030E, 1)
+  -- Always seems to be set to 0, and only read during OAM handling
+  -- of the player sprite.
+
+local throwing_and_desert_step_counter = ram.Unsigned(0x7E030A, 1)
+  -- Step counter used with $030B. Also, $030A-B seem to be used for the
+  -- opening of the desert palace
+
+local BY_button_bitfield = ram.Unsigned(0x7E003A, 1)
+  -- Bitfield for the B and Y buttons
+  -- hymuunub
+  -- b - B button was pressed this frame, and not held down during the
+  --     previous frame.
+  -- u - Unused.
+  -- n - Possible to be set, but not sure what it does
+  -- m - Checked in one place, but not sure if it's ever set.
+  -- y - The Y button has been held down for one or more frames.
+  -- h - The B button has been held down for one or more frames.
+
+local A_button_bitfield = ram.Unsigned(0x7E003B, 1)
+  -- Bitfield for the A button
+  -- auuduuuu
+  -- a - The A button is down.
+  -- u - Unused.
+  -- d - Debug flag. Checked in one place, but never set.
+
+local link_grabbing_wall = ram.Unsigned(0x7E0376, 1)
+  -- bit 0: Link is grabbing a wall.
+
+local link_grabbing_at_something = ram.Unsigned(0x7E0048, 1)
+  -- If set, when the A button is pressed, the player sprite will enter the
+  -- "grabbing at something" state.
+
+local link_can_turn = ram.Unsigned(0x7E0050, 1)
+  -- A flag indicating whether a change of the direction Link is facing is
+  -- possible.  For example, when the B button is held down with a sword.
+  -- 0 - Can change
+  -- non zero - Can't change.
+  -- NOTE: code seems to only check bit 0
+
+local enemy_contact_electrocutes_link = ram.Unsigned(0x7E0360, 1)
+  -- A flag that, when nonzero, causes Link to be electrocuted when
+  -- touching an enemy.
+
+local cape_mode = ram.Unsigned(0x7E0055, 1)
+  -- Cape flag, when set, makes you invisible and invincible.
+  -- You can also go through objects, such as bungies.
+
+local attack_related_delay_timer = ram.Unsigned(0x7E003D, 1)
+  -- A delay timer for the spin attack.                                           
+  -- Used between shifts to make the animation flow with the flash effect.        
+  -- Also used for delays between different graphics when swinging the sword. 
+
+local walking_dir_even_stationary = ram.Unsigned(0x7E0067, 1) 
+  -- Indicates which direction Link is walking (even if not going anywhere).      
+  -- ----udlr.                                                                    
+  -- u - Up
+  -- d - Down
+  -- l - Left
+  -- r - Right
+
+local moving_into_slanted_wall = ram.Unsigned(0x7E006B, 1)
+  -- moving up against a \ wall: 0x1A
+  -- moving right against a \ wall: 0x25
+  -- moving down against a \ wall: 0x15
+  -- moving left against a \ wall: 0x2A
+  --
+  -- moving up against a / wall: 0x19
+  -- moving left against a / wall: 0x26
+  -- moving right against a / wall: 0x29
+  -- moving down against a / wall: 0x16
 
 -- Module_Overworld takes $11, shifts it left 1 bit, stores in X
 -- then  jsr(.submodules, X), within pool Module_Overworld
@@ -153,19 +331,19 @@ end
 -- Bank02.asm line 8138
 -- ; *$13532-$135AB JUMP LOCATION
 function complete_rewrite()
-  tmp_x.write(max_step(player_x:read(), x_dest:read()))
-  tmp_y.write(max_step(player_y:read(), y_dest:read()))
+  tmp_x:write(max_step(player_x:read(), x_dest:read()))
+  tmp_y:write(max_step(player_y:read(), y_dest:read()))
 
-  player_x.write(player_x:read() + tmp_x.read())
-  player_y.write(player_y:read() + tmp_y.read())
+  player_x:write(player_x:read() + tmp_x.read())
+  player_y:write(player_y:read() + tmp_y.read())
 
   if player_y:read() == y_dest:read() and player_x:read() == x_dest:read() then
     sub_submodule_index:inc()  -- INC $B0
     incap_timer:write(0)  -- STZ $46
   end
 
-  player_y_cycle.write(tmp_y:read())
-  player_x_cycle.write(tmp_x:read())
+  player_y_cycle:write(tmp_y:read())
+  player_x_cycle:write(tmp_x:read())
 
   unknown_function_BB90()
   if ow_scr_transition_bf2:read() ~= 0 then
@@ -443,74 +621,6 @@ function unknown_function_9583()
 end
 
 
-local bunny_transform_timer = ram.Unsigned(0x7E02E2, 1) 
-
-local link_sprite_is_bunny = ram.Unsigned(0x7E02E0, 1)
-local mirror_link_sprite_is_bunny = ram.Unsigned(0x7E0056, 1)
-
-local tempbunny_timer = ram.Unsigned(0x7E03F5, 2)
-  -- The timer for Link's tempbunny state.
-  -- When it counts down he returns to his normal state.
-  -- When Link is hit it always falls to zero.
-  -- Is always set to 0x100 when a yellow hunter (transformer) hits him.
-  -- If Link is not in normal mode, however, it will have no effect on him.
-  -- The value is given in frames, so if the value written is 0x80, you
-  -- will be a bunny for 128 frames
-
-local tempbunny_needs_poof = ram.Unsigned(0x7E03F7, 1)
-  -- Flag indicating whether the "poof" needs to occur for Link to transform
-  -- into the tempbunny.
-
-local link_handler_state = ram.Unsigned(0x7E005D, 1)
-  -- Link Handler or "State"
-  -- 0x0 - ground state
-  -- 0x1 - falling into a hole
-  -- 0x2 - recoil from hitting wall / enemies
-  -- 0x3 - spin attacking
-  -- 0x4 - swimming
-  -- 0x5 - Turtle Rock platforms
-  -- 0x6 recoil again (other movement)
-  -- 0x7 - hit by Agahnim<92>s bug zapper
-  -- 0x8 - using ether medallion
-  -- 0x9 - using bombos medallion
-  -- 0xA - using quake medallion
-  -- 0xB - ???
-  -- 0xC - ???
-  -- 0xD - ???
-  -- 0xE - ???
-  -- 0xF - ???
-  -- 0x10 - ???
-  -- 0x11 - falling off a ledge
-  -- 0x12 - used when coming out of a dash by pressing a direction other than the dash direction
-  -- 0x13 - hookshot
-  -- 0x14 - magic mirror
-  -- 0x15 - holding up an item
-  -- 0x16 - asleep in his bed
-  -- 0x17 - permabunny
-  -- 0x18 - stuck under a heavy rock
-  -- 0x19 - Receiving Ether Medallion
-  -- 0x1A - Receiving Bombos Medallion
-  -- 0x1B - Opening Desert Palace
-  -- 0x1C - temporary bunny
-  -- 0x1D - Rolling back from Gargoyle gate or PullForRupees object
-  -- 0x1E - The actual spin attack motion.
- 
-local link_carrying_bitfield = ram.Unsigned(0x7E0308, 1)
-  -- Bit 7 is set when Link is carrying something. Bit 1 set when Link is praying?
-local link_pick_up_state = ram.Unsigned(0x7E0309, 1)
-  -- 0: nothing. 1: picking up something. 2: throwing something or halfway done picking up something
-
-local special_effects_array = ram.Array(0x7E0C4A, 1, 10)
-
-local unknown_falling_hole_related = ram.Unsigned(0x7E02CA, 1)
-
-local link_aux_state = ram.Unsigned(0x7E004D, 1)
-  -- An Auxiliary Link handler.
-  -- 0x00 - ground state (normal)
-  -- 0x01 - the recoil status
-  -- 0x02 - jumping in and out of water?
-  -- 0x04 - swimming state.
-
 function Player_ResetState(A)
   error('unimplemented')
   return A
@@ -706,78 +816,89 @@ function ground_state_handler()  -- name?!
   unknown_falling_hole_related:write(0)  -- STZ $02CA
 
   -- ; Is Link in a ground state? Yes...
-  if link_aux_state:read() == 0 then  -- LDA $4D 
+  if link_aux_state:read() == 0 then  -- LDA $4D
     goto BRANCH_DELTA  -- : BEQ BRANCH_DELTA
   end
 
 
-; *$38130 ALTERNATE ENTRY POINT
+  -- ; *$38130 ALTERNATE ENTRY POINT
 
-    STZ $0301 ; Link is in some other submode.
-    STZ $037A
-    STZ $020B
-    STZ $0350
-    STZ $030D
-    STZ $030E
-    STZ $030A
-    
-    STZ $3B
-    
-    ; Ignore calls to the Y button in these submodes.
-    LDA $3A : AND.b #$BF : STA $3A
-    
-    STZ $0308
-    STZ $0309
-    STZ $0376
-    
-    STZ $48
-    
-    JSL Player_ResetSwimState
-    
-    LDA $50 : AND.b #$FE : STA $50
-    
-    STZ $25
-    
-    LDA $0360 : BEQ BRANCH_EPSILON
-    
-    ; Is Link in cape mode?
-    LDA $55 : BEQ BRANCH_ZETA
-    
-    JSR $AE54 ; $3AE54 IN ROM; Link's in cape mode.
+  link_brandished_item:write(0)  -- STZ $0301 ; Link is in some other submode.
+  link_pose:write(0)  -- STZ $037A
+  some_debug_value_01:write(0)  -- STZ $020B
+  unused_but_written_to_01:write(0)  -- STZ $0350
+  unknown_01:write(0)  -- STZ $030D
+  seems_always_0:write(0)  -- STZ $030E
+  throwing_and_desert_step_counter:write(0)  -- STZ $030A
 
-BRANCH_ZETA:
+  A_button_bitfield:write(0)  -- STZ $3B
 
-    JSR $9D84 ; $39D84 IN ROM
-    
-    LDA.b #$01 : STA $037B
-    
-    STZ $0300
-    
-    LDA.b #$02 : STA $3D
-    
-    STZ $2E
-    
-    LDA $67 : AND.b #$F0 : STA $67
-    
-    LDA.b #$2B : JSR Player_DoSfx3
-    
-    ; Link got hit with the Agahnim bug zapper
-    LDA.b #$07 : STA $5D
-    
-    ; GO TO ELECTROCUTION MODE
-    BRL Player_Electrocution
+  -- ; Ignore calls to the Y button in these submodes.
+  -- This clears the 'Y' flag
+  BY_button_bitfield:write(  -- LDA $3A : AND.b #$BF : STA $3A
+      bit.band(BY_button_bitfield:read(), 0xBF))
 
-BRANCH_EPSILON:
+  link_carrying_bitfield:write(0)  -- STZ $0308
+  link_pick_up_state:write(0)  -- STZ $0309
+  link_grabbing_wall:write(0)  -- STZ $0376
 
-    ; Checking for indoors, but really \optimize Because it's doing nothing
-    ; with this information. (Take out the branch)
-    LDA $1B : BNE .zero_length_branch
+  link_grabbing_at_something:write(0)  -- STZ $48
 
-    ; It is a secret to everybody.
+  Player_ResetSwimState()  -- JSL Player_ResetSwimState
 
-.zero_length_branch
+  -- clear the low bit (so link CAN turn)
+  link_can_turn:write(  -- LDA $50 : AND.b #$FE : STA $50
+      bit.band(link_can_turn:read(), 0xFE))
 
-    STZ $6B
+  unknown_02:write(0)  -- STZ $25
+
+  if enemy_contact_electrocutes_link:read() == 0 then  -- LDA $0360
+    goto BRANCH_EPSILON  -- : BEQ BRANCH_EPSILON
+  end
+
+  -- ; Is Link in cape mode?
+  if cape_mode:read() == 0 then  -- LDA $55
+    goto BRANCH_ZETA  -- : BEQ BRANCH_ZETA
+  end
+  
+  unknown_cape_mode_function()  -- JSR $AE54 ; $3AE54 IN ROM; Link's in cape mode.
+
+  ::BRANCH_ZETA::
+  unknown_attack_related_function()  -- JSR $9D84 ; $39D84 IN ROM
+
+  hittable_by_sprites:write(0x01)  -- LDA.b #$01 : STA $037B
+    
+  unknown_03:write(0)  -- STZ $0300
+    
+  attack_related_delay_timer:write(0x02)  -- LDA.b #$02 : STA $3D
+    
+  ram.animation_step_counter:write(0)  -- STZ $2E
+    
+  -- clears the low nibble... so no directions, I guess.. but why not just
+  -- assign 0 if the high nibble is always zeroed?
+  walking_dir_even_stationary:write(  -- LDA $67 : AND.b #$F0 : STA $67
+      bit.band(walking_dir_even_stationary:read(), 0xF0))
+    
+  A = 0x2B  -- LDA.b #$2B
+  Player_DoSfx3()  -- : JSR Player_DoSfx3
+    
+  -- ; Link got hit with the Agahnim bug zapper
+  link_handler_state:write(0x07)  -- LDA.b #$07 : STA $5D
+    
+  -- ; GO TO ELECTROCUTION MODE
+  Player_Electrocution()  -- BRL Player_Electrocution
+
+  ::BRANCH_EPSILON::
+
+  -- ; Checking for indoors, but really \optimize Because it's doing nothing
+  -- ; with this information. (Take out the branch)
+  if ram.player_not_overworld:read() ~= 0 then  -- LDA $1B
+    goto ZERO_LENGTH_BRANCH  -- : BNE .zero_length_branch
+  end
+  -- ; It is a secret to everybody.
+  ::ZERO_LENGTH_BRANCH::
+
+  moving_into_slanted_wall:write(0)  -- STZ $6B
     
     LDA.b #$02 : STA $5D
     
@@ -965,3 +1086,215 @@ BRANCH_OMEGA:
     
     RTS
 }
+
+; *$39D84-$39E62 LOCAL
+{
+
+BRANCH_EPSILON:
+
+    ; Bring Link to stop
+    STZ $5E
+    
+    LDA $48 : AND.b #$F6 : STA $48
+    
+    ; Stop any animations Link is doing
+    STZ $3D
+    STZ $3C
+    
+    ; Nullify button input on the B button
+    LDA $3A : AND.b #$7E : STA $3A
+    
+    ; Make it so Link can change direction if need be
+    LDA $50 : AND.b #$FE : STA $50
+    
+    BRL BRANCH_ALPHA
+
+; *$39D9F ALTERNATE ENTRY POINT
+
+    BIT $48 : BNE BRANCH_BETA
+    
+    LDA $48 : AND.b #$09 : BNE BRANCH_GAMMA
+
+BRANCH_BETA:
+
+    LDA $47    : BEQ BRANCH_DELTA
+    CMP.b #$01 : BEQ BRANCH_EPSILON
+
+BRANCH_GAMMA:
+
+    LDA $3C : CMP.b #$09 : BNE BRANCH_ZETA
+    
+    LDX.b #$0A : STX $3C
+    
+    LDA $9CBF, X : STA $3D
+
+BRANCH_ZETA:
+
+    DEC $3D : BPL BRANCH_THETA
+    
+    LDA $3C : INC A : CMP.b #$0D : BNE BRANCH_KAPPA
+    
+    LDA $7EF359 : INC A : AND.b #$FE : BEQ BRANCH_LAMBDA
+    
+    LDA $48 : AND.b #$09 : BEQ BRANCH_LAMBDA
+    
+    LDY.b #$01
+    LDA.b #$1B
+    
+    JSL AddWallTapSpark ; $49395 IN ROM
+    
+    LDA $48 : AND.b #$08 : BNE BRANCH_MUNU
+    
+    LDA $05 : JSR Player_DoSfx2
+    
+    BRA BRANCH_XI
+
+BRANCH_MUNU:
+
+    LDA.b #$06 : JSR Player_DoSfx2
+
+BRANCH_XI:
+
+    ; Do sword interaction with tiles
+    LDY.b #$01
+    
+    JSR $D077   ; $3D077 IN ROM
+    
+BRANCH_LAMBDA:
+
+    LDA.b #$0A
+
+BRANCH_KAPPA:
+
+    STA $3C : TAX
+    
+    LDA $9CBF, X : STA $3D
+    
+BRANCH_THETA:
+
+    BRA BRANCH_RHO
+
+BRANCH_DELTA:
+
+    LDA.b #$09 : STA $3C
+    
+    LDA.b #$01 : TSB $50
+    
+    STZ $3D
+    
+    LDA $5E
+    
+    CMP.b #$04 : BEQ BRANCH_RHO
+    CMP.b #$10 : BEQ BRANCH_RHO
+    
+    LDA.b #$0C : STA $5E
+    
+    LDA $7EF359 : INC A : AND.b #$FE : BEQ BRANCH_ALPHA
+    
+    LDX.b #$04
+
+BRANCH_PHI:
+
+    LDA $0C4A, X
+    
+    CMP.b #$30 : BEQ BRANCH_ALPHA
+    CMP.b #$31 : BEQ BRANCH_ALPHA
+    
+    DEX : BPL BRANCH_PHI
+    
+    LDA $79 : CMP.b #$06 : BCC BRANCH_CHI
+    
+    LDA $1A : AND.b #$03 : BNE BRANCH_CHI
+    
+    JSL AncillaSpawn_SwordChargeSparkle
+
+BRANCH_CHI:
+
+    LDA $79 : CMP.b #$40 : BCS BRANCH_ALPHA
+    
+    INC $79 : LDA $79 : CMP.b #$30 : BNE BRANCH_ALPHA
+    
+    LDA.b #$37 : JSR Player_DoSfx2
+    
+    JSL AddChargedSpinAttackSparkle
+    
+    BRA BRANCH_ALPHA
+
+BRANCH_RHO:
+
+    JSR $9E63 ; $39E63 IN ROM
+
+BRANCH_ALPHA:
+    
+    RTS
+}
+
+; *$39E63-$39EEB LOCAL
+{
+    ; sword
+    LDA $7EF359 : BEQ BRANCH_39D84_BRANCH_ALPHA ; RTS
+    CMP.b #$FF  : BEQ BRANCH_39D84_BRANCH_ALPHA
+    
+    CMP.b #$02 : BCS BRANCH_ALPHA
+
+BRANCH_GAMMA:
+
+    LDY.b #$27
+    
+    LDA $3C : STA $02 : STZ $03
+    
+    CMP.b #$09 : BEQ BRANCH_39D84_BRANCH_ALPHA : bCC BRANCH_BETA
+    
+    LDA $02 : SUB.b #$0A : STA $02
+    
+    LDY.b #$03
+
+BRANCH_BETA:
+
+    REP #$30
+    
+    LDA $2F : AND.w #$00FF : TAX
+    
+    LDA $0DA030, X : STA $04
+    
+    TYA : AND.w #$00FF : ASL A : ADD $04 : TAX
+    
+    LDA $0D9EF0, X : ADD $02 : TAX
+    
+    SEP #$20
+    
+    LDA $0D98F3, X : STA $44
+    LDA $0D9AF2, X : STA $45
+    
+    SEP #$10
+    
+    RTS
+
+BRANCH_ALPHA:
+
+    LDA $3C : CMP.b #$09 : BCS BRANCH_GAMMA
+    
+    ASL A : STA $04
+    
+    LDA $2F : LSR A : STA $0E
+    
+    ASL #3 : ADD $0E : ASL A : ADD $04 : TAX
+    
+    LDA $0DAC45, X : CMP.b #$FF : BEQ BRANCH_DELTA
+    
+    TXA : LSR A : TAX
+    
+    LDA $0DAC8D, X : STA $44
+    LDA $0DACB1, X : STA $45
+    
+parallel pool LinkItem_Rod:
+
+.quick_return
+
+    RTS
+
+BRANCH_DELTA:
+
+    BRL BRANCH_GAMMA
+}
+
