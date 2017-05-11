@@ -28,6 +28,11 @@ local sub_screen_designation = ram.Unsigned(0x7E001D, 1)
     -- b - BG3 enabled
     -- c - BG2 enabled
     -- d - BG1 enabled
+
+local window_mask_activation = ram.Unsigned(0x7E001E, 1)
+  -- Window Mask Activation
+local subscreen_window_mask_activation = ram.Unsigned(0x7E001F, 1)
+  -- Subscreen Window Mask Activation
 local mirror_sub_screen_designation = ram.Unsigned(0x7EC212, 1)
 
 local module_index = ram.Unsigned(0x7E0010, 1)  -- unused?
@@ -64,6 +69,7 @@ local bg_level = ram.Unsigned(0x7E00EE, 1)
 
 -- controller 2
 local filtered_jp2_main = ram.Unsigned(0x7E00F5, 1)  -- BYST|udlr
+local filtered_jp1_secondary = ram.Unsigned(0x7E00F6, 1)  -- AXLR|????
 
 local mirror_link_dungeon_floor_mirror = ram.Unsigned(0x7EC1AA, 2)
 local mirror_player_facing = ram.Unsigned(0x7EC1A6, 1)
@@ -214,11 +220,21 @@ local unused_but_written_to_01 = ram.Unsigned(0x7E0350, 1)
 
 local unknown_01 = ram.Unsigned(0x7E030D, 1)
   -- ???
+local z_coordinate = ram.Unsigned(0x7E0024, 1)
+  -- 0xFFFF usually, but if Link is elevated off the ground it is considered to
+  -- be his Z coordinate. That is, it's his height off of the ground.
 local unknown_02 = ram.Unsigned(0x7E0025, 1)
   -- ???  something to do with zoom when in attract mode, but unsure otherwise
+local vertical_resistance = ram.Unsigned(0x7E0029, 1)
+  -- vertical resistance
+  -- (ATTRACT) Agahnim's base X coordinate relative to the screen.
 local unknown_03 = ram.Unsigned(0x7E0300, 1)
-  -- Link's state changes? Happens when using boomerang.                          
-  -- Also related to electrocution maybe?  
+  -- Link's state changes? Happens when using boomerang.
+  -- Also related to electrocution maybe?
+local unknown_04 = ram.Unsigned(0x7E02C6, 1)
+  -- ???
+local unknown_05 = ram.Unsigned(0x7E030D, 1)
+  -- ???
 
 
 local seems_always_0 = ram.Unsigned(0x7E030E, 1)
@@ -270,13 +286,13 @@ local cape_mode = ram.Unsigned(0x7E0055, 1)
   -- You can also go through objects, such as bungies.
 
 local attack_related_delay_timer = ram.Unsigned(0x7E003D, 1)
-  -- A delay timer for the spin attack.                                           
-  -- Used between shifts to make the animation flow with the flash effect.        
-  -- Also used for delays between different graphics when swinging the sword. 
+  -- A delay timer for the spin attack.
+  -- Used between shifts to make the animation flow with the flash effect.
+  -- Also used for delays between different graphics when swinging the sword.
 
-local walking_dir_even_stationary = ram.Unsigned(0x7E0067, 1) 
-  -- Indicates which direction Link is walking (even if not going anywhere).      
-  -- ----udlr.                                                                    
+local walking_dir_even_stationary = ram.Unsigned(0x7E0067, 1)
+  -- Indicates which direction Link is walking (even if not going anywhere).
+  -- ----udlr.
   -- u - Up
   -- d - Down
   -- l - Left
@@ -292,6 +308,11 @@ local moving_into_slanted_wall = ram.Unsigned(0x7E006B, 1)
   -- moving left against a / wall: 0x26
   -- moving right against a / wall: 0x29
   -- moving down against a / wall: 0x16
+
+local debug_variable_always_0 = ram.Unsigned(0x7E0305, 1)
+  -- Debug variable only seen in Bank 07. If not equal to 0x01, it will cause
+  -- $1E and $1F to not be zeroed out every frame, which could cause some
+  -- graphical oddities.
 
 -- Module_Overworld takes $11, shifts it left 1 bit, stores in X
 -- then  jsr(.submodules, X), within pool Module_Overworld
@@ -770,6 +791,53 @@ function cache_state_if_on_overworld()
   return  -- RTS
 end
 
+
+-- ; *$3B5D6-$3B608 LONG
+-- {
+function unknown_B5D6()
+  if bit.band(  -- LDA $3B : AND.b #$80
+      A_button_bitfield:read(), 0x80) == 0 then
+    goto ABUTTONNOTDOWN  -- : BEQ .aButtonNotDown
+  end
+  -- ; axlr----, bystudlr's distant cousin
+  if bit.band(  -- LDA $F6 : AND.b #$80
+      filtered_jp1_secondary:read(), 0x80) == 0 then
+    goto ABUTTONNOTDOWN  -- : BEQ .aButtonNotDown
+  end
+        
+  -- NOTE: this is basically "if picking up something", i think
+  if bit.band(  -- LDA $0309 : AND.b #$01
+      link_pick_up_state:read(), 0x01) != 0 then
+    goto ABUTTONNOTDOWN  -- : BNE .aButtonNotDown
+  end
+        
+  unknown_05:write(0)  -- STZ $030D
+  seems_always_0:write(0)  -- STZ $030E
+  throwing_and_desert_step_counter:write(0)  -- STZ $030A
+        
+  A_button_bitfield:write(0)  -- STZ $3B
+        
+  -- clear the low bit, so link can turn
+  link_can_turn:write(  -- LDA $50 : AND.b #$FE : STA $50
+      bit.band(link_can_turn:read(), 0xFE))
+        
+  -- ; appears to be a debug variable, so it should always be zero.
+  -- LDA $0305 : CMP.b #$01
+  if debug_variable_always_0:read() != 0x01 then
+    goto DONT_DISABLE_MASKS  -- : BNE .dontDisableMasks
+  end
+        
+  window_mask_activation:write(0)  -- STZ $1E
+  subscreen_window_mask_activation:write(0)  -- STZ $1F
+  
+  ::DONT_DISABLE_MASKS::
+  return true  -- SEC : RTS
+    
+  ::ABUTTONNOTDOWN::
+  return false -- CLC : RTS
+end
+
+
 -- ; *$38109-$38364 JUMP LOCATION
 -- {
 -- RELEVANT: dw $8109 ; = $38109* 0x00 - Ground state (normal mode)
@@ -805,7 +873,9 @@ function ground_state_handler()  -- name?!
   end
 
   -- TODO ; How to handle a permabunny.
+  -- TODO:  THIS IS ACTUALLY A GOTO IN THE CODE
   unknown_bunny_383A1()  -- BRL BRANCH_$383A1
+  return -- ADDED THIS BECAUSE IT'S A JUMP
 
   ::NOTPERMABUNNYCANTMOVE::  -- .notTempBunnyCantMove
 
@@ -886,7 +956,9 @@ function ground_state_handler()  -- name?!
   link_handler_state:write(0x07)  -- LDA.b #$07 : STA $5D
     
   -- ; GO TO ELECTROCUTION MODE
+  -- TODO: this is actually a goto in the code!
   Player_Electrocution()  -- BRL Player_Electrocution
+  return  -- NOTE: added this return, because the above was a GOTO
 
   ::BRANCH_EPSILON::
 
@@ -900,23 +972,28 @@ function ground_state_handler()  -- name?!
 
   moving_into_slanted_wall:write(0)  -- STZ $6B
     
-    LDA.b #$02 : STA $5D
+  link_handler_state:write(0x02)  -- LDA.b #$02 : STA $5D
     
-    BRL BRANCH_$386B5 ; go to recoil mode.
+  -- TODO: this is actually a goto in the code!
+  unknown_function_386B5()  --  BRL BRANCH_$386B5 ; go to recoil mode.
+  return  -- NOTE: added this return, because the above was a GOTO
 
-; Pretty much normal mode. Link standing there, ready to do stuff.
-BRANCH_DELTA:
+  -- ; Pretty much normal mode. Link standing there, ready to do stuff.
+  ::BRANCH_DELTA::
 
-    LDA.b #$FF : STA $24
-                 STA $25
-                 STA $29
+  A = 0xFF  -- LDA.b #$FF
+  z_coordinate:write(A)  -- : STA $24
+  unknown_02:write(A)  -- STA $25
+  vertical_resistance:write(A)  -- STA $29
+  unknown_04:write(0)  -- STZ $02C6
     
-    STZ $02C6
+  -- ; $3B5D6 IN ROM ; If Carry is set on Return, don't read the buttons.
+  if unknown_B5D6() then  -- JSR $B5D6
+    goto BRANCH_IOTA  -- : BCS BRANCH_IOTA
+  end
     
-    ; $3B5D6 IN ROM ; If Carry is set on Return, don't read the buttons.
-    JSR $B5D6 : BCS BRANCH_IOTA
-    
-    JSR $9BAA ; $39BAA IN ROM
+  -- TODO: this function is well documented, but looks complex
+  unknown_9BAA()  --  JSR $9BAA ; $39BAA IN ROM
     
     LDA $0308 : ORA $0376 : BNE BRANCH_IOTA
     
