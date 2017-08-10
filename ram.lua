@@ -7,8 +7,6 @@ if not memory then
   memory = require 'stub_memory'
 end
 
-
-
 Array = util.class()
 function Array:__init(address, data_size, length)
   if type(address) ~= 'number' then
@@ -105,54 +103,9 @@ function Signed:__init(address, size)
   Field.__init(self, address, size, true)
 end
 
-
 return {
   Array = Array,
   Field = Field,
   Unsigned = Unsigned,
   Signed = Signed,
-
-  rng = Unsigned(0x7E0FA0, 2),
-
-  player_not_overworld = Unsigned(0x7E001B, 1),
-      -- 0x0 = overworld, 0x1 = house or dungeon
-  player_y = Unsigned(0x7E0020, 2),
-  player_x = Unsigned(0x7E0022, 2),
-  input_push_state = Unsigned(0x7E0026, 1),
-      -- TODO: useful? looks like input_buffer_main except only udlr
-  player_y_cycle_index = Unsigned(0x7E002A, 1),
-  player_x_cycle_index = Unsigned(0x7E002B, 1),
-  animation_step_counter = Unsigned(0x7E002E, 1),
-  player_facing = Unsigned(0x7E002F, 1),
-  player_y_cycle = Signed(0x7E0030, 1),
-  player_x_cycle = Signed(0x7E0031, 1),
-
-
-  player_movement_type = Unsigned(0x7E005E, 1),
-      -- 0x0C == sword/item held
-      -- 0x00 == normal
-      -- 0x10 == dashing (not on stairs)
-      -- 0x02 == stairs (when walking/dashing vertically)
-      -- 0x06 == entering cave from overworld
-  player_on_lower_level = Unsigned(0x7E00EE, 1),
-      -- 0 upper, 1 lower
-
-  input_buffer_main = Unsigned(0x7E00F0, 1),  -- BYST|udlr
-  input_buffer_main_flags = {
-    RIGHT = 1,
-    LEFT = 2,
-    DOWN = 4,
-    UP = 8,
-    START = 16,
-    SELECT = 32,
-    Y = 64,
-    B = 128,
-  },
-  input_buffer_secondary = Unsigned(0x7E00F2, 1),  -- AXLR|????
-  input_buffer_secondary_flags = {
-    R = 16,
-    L = 32,
-    X = 64,
-    A = 128,
-  },
 }

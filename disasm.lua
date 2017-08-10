@@ -9,9 +9,9 @@ local ram = require 'ram'
 local srm_progress_indicator = ram.Unsigned(0x7EF3C5, 1)
   -- $0: Unset, Will put Link in his bed state at the beginning of
   --     the game. (Also can't use sword or shield)
-  -- $1: You have a sword and start in the castle on start up.                  
-  -- $2: Indicates you have completed the first Hyrule Castle dungeon.          
-  -- $3: Indicates you have beaten Agahnim and are now searching for crystals.  
+  -- $1: You have a sword and start in the castle on start up.
+  -- $2: Indicates you have completed the first Hyrule Castle dungeon.
+  -- $3: Indicates you have beaten Agahnim and are now searching for crystals.
   -- $4 and above: meaningless. Though, you could write code using them to
   --     expand the event system perhaps.
 
@@ -244,6 +244,8 @@ local unknown_04 = ram.Unsigned(0x7E02C6, 1)
   -- ???
 local unknown_05 = ram.Unsigned(0x7E030D, 1)
   -- ???
+local unknown_06 = ram.Unsigned(0x7E0302, 1)
+  -- ???
 
 
 local seems_always_0 = ram.Unsigned(0x7E030E, 1)
@@ -275,10 +277,14 @@ local A_button_bitfield = ram.Unsigned(0x7E003B, 1)
 local link_grabbing_wall = ram.Unsigned(0x7E0376, 1)
   -- bit 0: Link is grabbing a wall.
   -- bit 1 is ignored(cleared via and) before certain checks for some reason..
+  --   .. and it's explicitly checked if set in another place!
 
+-- TODO: should this be called "link_can_grab_something"?
 local link_grabbing_at_something = ram.Unsigned(0x7E0048, 1)
   -- If set, when the A button is pressed, the player sprite will enter the
   -- "grabbing at something" state.
+  -- bit 0 and 3 are checked together in some places.. what are they?!
+  -- TODO: what are these bits?!!
 
 local link_can_turn = ram.Unsigned(0x7E0050, 1)
   -- A flag indicating whether a change of the direction Link is facing is
@@ -295,10 +301,11 @@ local cape_mode = ram.Unsigned(0x7E0055, 1)
   -- Cape flag, when set, makes you invisible and invincible.
   -- You can also go through objects, such as bungies.
 
-local attack_related_delay_timer = ram.Unsigned(0x7E003D, 1)
+local attack_related_delay_timer = ram.Signed(0x7E003D, 1)
   -- A delay timer for the spin attack.
   -- Used between shifts to make the animation flow with the flash effect.
   -- Also used for delays between different graphics when swinging the sword.
+  -- Decremented past 0 and checked for wrap around, so making it signed
 
 local walking_dir_even_stationary = ram.Unsigned(0x7E0067, 1)
   -- Indicates which direction Link is walking (even if not going anywhere).
@@ -334,6 +341,37 @@ local maybe_link_is_transforming = ram.Unsigned(0x7E02E1, 1)
 local b_frames_held_and_spin_attack_nibble = ram.Unsigned(0x7E003C, 1)
   -- Lower Nibble: How many frames the B button has been held, approximately.
   -- Upper nibble: set to 9 on spin attack release.
+  -- checked for equivalence to 0x09 in some places, and assigned 0x0A
+
+local link_is_moving = ram.Unsigned(0x7E034A, 1)
+  -- Flag indicating whether Link is moving or not. (I think)
+
+local unknown_collision_related_01 = ram.Unsigned(0x7E0334, 1)
+local unknown_collision_related_02 = ram.Unsigned(0x7E0335, 1)
+local unknown_collision_related_03 = ram.Unsigned(0x7E0336, 1)
+local unknown_collision_related_04 = ram.Unsigned(0x7E0337, 1)
+
+local make_link_move = ram.Unsigned(0x7E0049, 1)
+  -- This address is written to make Link move in any given direction. When
+  -- indoors, it is cleared every frame. When outdoors, it is not cleared every
+  -- frame so watch out.
+
+local tired_of_pushing_wall_timer = ram.Unsigned(0x7E0371, 1)
+  -- Countdown timer for frames it will take Link to become tired pushing
+  -- against something solid. Once counted down, his appearance will look
+  -- flushed and like he's dragging ass. Resets once you stop pushing or moving. 
+
+local ledge_jump_timer = ram.Unsigned(0x7E0375, 1)
+  -- This is the timer the is used to count down how long it takes before Link
+  -- can jump off a ledge. It is typically set to 19 (0x13) frames, though I
+  -- don't believe it decrements every frame.
+
+local set_when_damaging_enemies = ram.Unsigned(0x7E0047, 1)
+  -- Set when damaging enemies, unsure of exact usage yet.
+
+
+local unknown_array_unknown_bounds = ram.Array(0x7E9CBF, 0x0A)
+  -- Unknown... but it's indexed by 0x0A, so it's at least that big
 
 -- Module_Overworld takes $11, shifts it left 1 bit, stores in X
 -- then  jsr(.submodules, X), within pool Module_Overworld
@@ -685,7 +723,7 @@ function can_move()
   end
 
   -- ; Check if Link first needs to be transformed.
-  if tempbunny_needs_poof:read() != 0 then  -- LDA $03F7
+  if tempbunny_needs_poof:read() ~= 0 then  -- LDA $03F7
     --TODO: where is this?
     goto DOTRANSFORMATION  -- : BNE .doTransformation
   end
@@ -825,35 +863,35 @@ function unknown_B5D6()
       filtered_jp1_secondary:read(), 0x80) == 0 then
     goto ABUTTONNOTDOWN  -- : BEQ .aButtonNotDown
   end
-        
+
   -- NOTE: this is basically "if picking up something", i think
   if bit.band(  -- LDA $0309 : AND.b #$01
-      link_pick_up_state:read(), 0x01) != 0 then
+      link_pick_up_state:read(), 0x01) ~= 0 then
     goto ABUTTONNOTDOWN  -- : BNE .aButtonNotDown
   end
-        
+
   unknown_05:write(0)  -- STZ $030D
   seems_always_0:write(0)  -- STZ $030E
   throwing_and_desert_step_counter:write(0)  -- STZ $030A
-        
+
   A_button_bitfield:write(0)  -- STZ $3B
-        
+
   -- clear the low bit, so link can turn
   link_can_turn:write(  -- LDA $50 : AND.b #$FE : STA $50
       bit.band(link_can_turn:read(), 0xFE))
-        
+
   -- ; appears to be a debug variable, so it should always be zero.
   -- LDA $0305 : CMP.b #$01
-  if debug_variable_always_0:read() != 0x01 then
+  if debug_variable_always_0:read() ~= 0x01 then
     goto DONT_DISABLE_MASKS  -- : BNE .dontDisableMasks
   end
-        
+
   window_mask_activation:write(0)  -- STZ $1E
   subscreen_window_mask_activation:write(0)  -- STZ $1F
-  
+
   ::DONT_DISABLE_MASKS::
   return true  -- SEC : RTS
-    
+
   ::ABUTTONNOTDOWN::
   return false -- CLC : RTS
 end
@@ -870,7 +908,7 @@ function ground_state_handler()  -- name?!
     goto NOTDEBUGWALLWALK  -- : BEQ .notDebugWallWalk
   end
 
-  -- ; \tcrf(confirmed, submitted) Debug feature where if you pressed the 
+  -- ; \tcrf(confirmed, submitted) Debug feature where if you pressed the
   -- ; second control pad's B button It lets you walk through all walls.
 
   -- LDA $037F : EOR.b #$01 : STA $037F
@@ -951,31 +989,31 @@ function ground_state_handler()  -- name?!
   if cape_mode:read() == 0 then  -- LDA $55
     goto BRANCH_ZETA  -- : BEQ BRANCH_ZETA
   end
-  
+
   unknown_cape_mode_function()  -- JSR $AE54 ; $3AE54 IN ROM; Link's in cape mode.
 
   ::BRANCH_ZETA::
   unknown_attack_related_function()  -- JSR $9D84 ; $39D84 IN ROM
 
   hittable_by_sprites:write(0x01)  -- LDA.b #$01 : STA $037B
-    
+
   unknown_03:write(0)  -- STZ $0300
-    
+
   attack_related_delay_timer:write(0x02)  -- LDA.b #$02 : STA $3D
-    
+
   ram.animation_step_counter:write(0)  -- STZ $2E
-    
+
   -- clears the low nibble... so no directions, I guess.. but why not just
   -- assign 0 if the high nibble is always zeroed?
   walking_dir_even_stationary:write(  -- LDA $67 : AND.b #$F0 : STA $67
       bit.band(walking_dir_even_stationary:read(), 0xF0))
-    
+
   A = 0x2B  -- LDA.b #$2B
   Player_DoSfx3()  -- : JSR Player_DoSfx3
-    
+
   -- ; Link got hit with the Agahnim bug zapper
   link_handler_state:write(0x07)  -- LDA.b #$07 : STA $5D
-    
+
   -- ; GO TO ELECTROCUTION MODE
   -- TODO: this is actually a goto in the code!
   Player_Electrocution()  -- BRL Player_Electrocution
@@ -992,9 +1030,9 @@ function ground_state_handler()  -- name?!
   ::ZERO_LENGTH_BRANCH::
 
   moving_into_slanted_wall:write(0)  -- STZ $6B
-    
+
   link_handler_state:write(0x02)  -- LDA.b #$02 : STA $5D
-    
+
   -- TODO: this is actually a goto in the code!
   unknown_function_386B5()  --  BRL BRANCH_$386B5 ; go to recoil mode.
   return  -- NOTE: added this return, because the above was a GOTO
@@ -1007,52 +1045,52 @@ function ground_state_handler()  -- name?!
   unknown_02:write(A)  -- STA $25
   vertical_resistance:write(A)  -- STA $29
   unknown_04:write(0)  -- STZ $02C6
-    
+
   -- ; $3B5D6 IN ROM ; If Carry is set on Return, don't read the buttons.
   if unknown_B5D6() then  -- JSR $B5D6
     goto BRANCH_IOTA  -- : BCS BRANCH_IOTA
   end
-    
+
   -- TODO: this function is well documented, but looks complex
   unknown_9BAA()  --  JSR $9BAA ; $39BAA IN ROM
-    
+
   -- if grabbing a wall or carrying something
   if bit.bor(
       link_carrying_bitfield:read(),  -- LDA $0308
-      link_grabbing_wall:read()) != 0 then  -- : ORA $0376
+      link_grabbing_wall:read()) ~= 0 then  -- : ORA $0376
     goto BRANCH_IOTA  -- : BNE BRANCH_IOTA
   end
-  
-  if unknown_master_sword_ceremony:read() != 0 then  -- LDA $0377
+
+  if unknown_master_sword_ceremony:read() ~= 0 then  -- LDA $0377
     goto BRANCH_IOTA  -- : BNE BRANCH_IOTA
   end
-    
+
   -- ; Is Link falling off of a ledge?    ; Yes...
   if link_handler_state:read() == 0x11 then  -- LDA $5D : CMP.b #$11
     goto BRANCH_IOTA  -- : BEQ BRANCH_IOTA
   end
-    
+
   unknown_9B0E()  --  JSR $9B0E ; $39B0E IN ROM ; Handle Y button items?
-    
+
   -- ; \hardcoded This is pretty unfair.
   -- ; \item Relates to ability to use the sword if you have one.
   -- If you haven't gotten the sword from your uncle yet (bed state)
   if srm_progress_indicator:read() == 0 then  -- LDA $7EF3C5
     goto CANT_USE_SWORD  -- : BEQ .cant_use_sword
   end
-    
+
   Player_Sword()  -- JSR Player_Sword
-    
+
   -- ; Is Link in spin attack mode?  No...
-  if link_handler_state:read() != 0x03 then  -- LDA $5D : CMP.b #$03
+  if link_handler_state:read() ~= 0x03 then  -- LDA $5D : CMP.b #$03
     goto BRANCH_IOTA  -- : BNE BRANCH_IOTA
   end
 
   -- NOTE: I think this is basically what stops movement during spin attack
-    
+
   ram.player_y_cycle:write(0)  -- STZ $30
   ram.player_x_cycle:write(0)  -- STZ $31
-    
+
   unknown_382D2()  --  BRL BRANCH_$382D2
   return  -- NOTE: added this because above isn't a call, it's a goto
 
@@ -1060,11 +1098,11 @@ function ground_state_handler()  -- name?!
   ::BRANCH_IOTA::
 
   unknown_AE88()  -- JSR $AE88 ; $3AE88 IN ROM
-  
+
   if incap_timer:read() == 0 then  -- LDA $46
     goto BRANCH_KAPPA  -- : BEQ BRANCH_KAPPA
   end
-    
+
   -- This if seems pointless... it skips zeroing if already zero.. but why not
   -- just set it to zero and skip the check?
   if moving_into_slanted_wall:read() == 0 then  -- LDA $6B
@@ -1081,13 +1119,13 @@ function ground_state_handler()  -- name?!
   link_pick_up_state:write(0)  -- STZ $0309
   link_carrying_bitfield:write(0)  -- STZ $0308
   link_grabbing_wall:write(0)  -- STZ $0376
-    
+
   -- if B is down
   if bit.band(  -- LDA $3A : AND.b #$80
-      BY_button_bitfield:read(), 0x80) != 0 then
+      BY_button_bitfield:read(), 0x80) ~= 0 then
     goto BRANCH_MU  -- : BNE BRANCH_MU
   end
-    
+
   -- clear the low bit, so link can turn
   link_can_turn:write(  -- LDA $50 : AND.b #$FE : STA $50
       bit.band(link_can_turn:read(), 0xFE))
@@ -1108,25 +1146,25 @@ function ground_state_handler()  -- name?!
 
   ::BRANCH_NU::
 
-  if maybe_link_is_transforming:read() != 0 then  -- LDA $02E1
+  if maybe_link_is_transforming:read() ~= 0 then  -- LDA $02E1
     goto BRANCH_OMICRON  -- : BNE BRANCH_OMICRON
   end
-    
+
   -- TODO: this clears bit 1 before checking, but docs only show bit 0 being
-  -- used to indicate grabbing a wall... why clear this bit? 
+  -- used to indicate grabbing a wall... why clear this bit?
   if bit.band(  -- LDA $0376 : AND.b #$FD
-      link_grabbing_wall:read(), 0xFD) != 0 then
+      link_grabbing_wall:read(), 0xFD) ~= 0 then
     goto BRANCH_OMICRON  -- : BNE BRANCH_OMICRON
   end
-    
+
   -- TODO: Checks if any bits other than the high bit are set... high bit indicates
   -- carrying state, docs imply perhaps bit 1 is set when link is "praying"
   -- so I guess this is "if link is praying"?
   if bit.band(  -- LDA $0308 : AND.b #$7F
-      link_carrying_bitfield:read(), 0x7F) != 0 then
+      link_carrying_bitfield:read(), 0x7F) ~= 0 then
     goto BRANCH_OMICRON  -- : BNE BRANCH_OMICRON
   end
-    
+
   -- If link isn't carrying anything
   if bit.band(  -- LDA $0308 : AND.b #$80 : BEQ BRANCH_PI
       link_carrying_bitfield:read(), 0x80) == 0 then
@@ -1135,20 +1173,20 @@ function ground_state_handler()  -- name?!
 
   -- If link is picking up something
   if bit.band(  -- LDA $0309 : AND.b #$01
-      link_pick_up_state:read(), 0x01) != 0 then
+      link_pick_up_state:read(), 0x01) ~= 0 then
     goto BRANCH_OMICRON  -- : BNE BRANCH_OMICRON
   end
 
   ::BRANCH_PI::
 
-  if link_brandished_item:read() != 0 then  -- LDA $0301
+  if link_brandished_item:read() ~= 0 then  -- LDA $0301
     goto BRANCH_OMICRON  -- : BNE BRANCH_OMICRON
   end
-   
-  if link_pose:read() != 0 then  -- LDA $037A
+
+  if link_pose:read() ~= 0 then  -- LDA $037A
     goto BRANCH_OMICRON  -- : BNE BRANCH_OMICRON
   end
-    
+
   -- LDA $3C : CMP.b #$09
   if b_frames_held_and_spin_attack_nibble:read() >= 0x9 then
     goto BRANCH_RHO  -- : BCC BRANCH_RHO
@@ -1156,7 +1194,7 @@ function ground_state_handler()  -- name?!
 
   -- TODO: checked bit documented as "checked in one place, not sure if ever set"
   if bit.band(  -- LDA $3A : AND.b #$20
-      BY_button_bitfield:read(), 0x20) != 0 then
+      BY_button_bitfield:read(), 0x20) ~= 0 then
     goto BRANCH_RHO  -- : BNE BRANCH_RHO
   end
 
@@ -1165,151 +1203,215 @@ function ground_state_handler()  -- name?!
       BY_button_bitfield:read(), 0x80) == 0 then
     goto BRANCH_RHO  -- : BEQ BRANCH_RHO
   end
-    
+
   ::BRANCH_OMICRON::
   goto BRANCH_PHI  -- BRA BRANCH_PHI
 
   ::BRANCH_RHO::
 
-    LDA $034A : BEQ BRANCH_TAU
-    
-    LDA.b #$01 : STA $0335 : STA $0337
-    LDA.b #$80 : STA $0334 : STA $0336
-    
-    BRL BRANCH_$39715
+  if link_is_moving:read() == 0 then  -- LDA $034A
+    goto BRANCH_TAU  -- : BEQ BRANCH_TAU
+  end
 
-BRANCH_TAU:
+  A = 0x01  -- LDA.b #$01
+  unknown_collision_related_02:write(A)  -- : STA $0335
+  unknown_collision_related_04:write(A)  -- : STA $0337
+  A = 0x80  -- LDA.b #$80
+  unknown_collision_related_01:write(A)  -- : STA $0334
+  unknown_collision_related_03:write(A)  -- : STA $0336
 
-    JSR Player_ResetSwimCollision
-    
-    LDA $49 : AND.b #$0F : BNE BRANCH_UPSILON
-    
-    LDA $0376 : AND.b #$02 : BNE BRANCH_PHI
-    
-    ; Branch if there are any directional buttons down.
-    LDA $F0 : AND.b #$0F : BNE BRANCH_UPSILON
-    
-    STA $30 : STA $31 : STA $67 : STA $26
-    
-    STZ $2E
-    
-    LDA $48 : AND.b #$F0 : STA $48
-    
-    LDX.b #$20 : STX $0371
-    
-    ; Ledge countdown timer resets here because of lack of directional input...
-    LDX.b #$13 : STX $0375
-    
-    BRA BRANCH_PHI
+  unknown_39715()  -- BRL BRANCH_$39715
+  return -- ADDED because above is a branch, not a call
 
-BRANCH_UPSILON:
+  ::BRANCH_TAU::
 
-    ; Store the directional data at $67. Is it equal to the previous reading?
-    ; Yes, so branch.
-    STA $67 : CMP $26 : BEQ BRANCH_CHI
-    
-    ; If the reading changed, we have to do all this.
-    STZ $2A
-    STZ $2B
-    STZ $6B
-    STZ $48
-    
-    LDX.b #$20 : STX $0371
-    
-    ; Reset ledge timer here because direction of ... (automated?) player
-    ; changed?
-    LDX.b #$13 : STX $0375
+  Player_ResetSwimCollision()  -- JSR Player_ResetSwimCollision
 
-BRANCH_CHI:
 
-    STA $26
+  -- THIS A VALUE IS USED IN UPSILON
+  A = bit.band(make_link_move:read(), 0x0F) -- LDA $49 : AND.b #$0F
+  if A ~= 0 then  -- LDA $49 : AND.b #$0F
+    goto BRANCH_UPLISON  -- : BNE BRANCH_UPSILON
+  end
 
-BRANCH_PHI:
+  if bit.band(  -- LDA $0376 : AND.b #$02
+     link_grabbing_wall:read(), 0x02) ~= 0 then
+    goto BRANCH_PHI  --  : BNE BRANCH_PHI
+  end
 
-    JSR $B64F   ; $3B64F IN ROM
-    JSL $07E245 ; $3E245 IN ROM
-    JSR $B7C7   ; $3B7C7 IN ROM; Has to do with opening chests.
-    JSL $07E6A6 ; $3E6A6 IN ROM
-    
-    LDA $0377 : BEQ BRANCH_PSI
-    
-    STZ $30
-    STZ $31
+  -- ; Branch if there are any directional buttons down.
+  -- THIS A VALUE IS USED IN UPSILON
+  A = bit.band(  -- LDA $F0 : AND.b #$0F
+      ram.input_buffer_main:read(), 0x0F)
 
-; *$382D2 LONG BRANCH LOCATION
-BRANCH_PSI:
+  if A ~= 0 then
+    goto BRANCH_UPSILON  -- : BNE BRANCH_UPSILON
+  end
 
-    STZ $0302
-    
-    JSR $E8F0 ; $3E8F0 IN ROM
+  ram.player_y_cycle:write(A)  -- STA $30
+  ram.player_x_cycle:write(A)  -- : STA $31
+  walking_dir_even_stationary:write(A)  -- : STA $67
+  ram.input_push_state:write(A)  -- : STA $26
 
-BRANCH_OMEGA:
+  ram.animation_step_counter:write(0)  -- STZ $2E
 
-    CLC
-    
-    RTS
-}
+  link_grabbing_at_something:write(bit.band(  -- LDA $48 : AND.b #$F0 : STA $48
+      link_grabbing_at_something:read(), 0xF0))
 
-; *$39D84-$39E62 LOCAL
-{
+  tired_of_pushing_wall_timer:write(0x20)  -- LDX.b #$20 : STX $0371
 
-BRANCH_EPSILON:
+  -- ; Ledge countdown timer resets here because of lack of directional input...
 
-    ; Bring Link to stop
-    STZ $5E
-    
-    LDA $48 : AND.b #$F6 : STA $48
-    
-    ; Stop any animations Link is doing
-    STZ $3D
-    STZ $3C
-    
-    ; Nullify button input on the B button
-    LDA $3A : AND.b #$7E : STA $3A
-    
-    ; Make it so Link can change direction if need be
-    LDA $50 : AND.b #$FE : STA $50
-    
-    BRL BRANCH_ALPHA
+  ledge_jump_timer:write(0x13)  -- LDX.b #$13 : STX $0375
 
-; *$39D9F ALTERNATE ENTRY POINT
+  goto BRANCH_PHI  -- BRA BRANCH_PHI
 
-    BIT $48 : BNE BRANCH_BETA
-    
-    LDA $48 : AND.b #$09 : BNE BRANCH_GAMMA
+  ::BRANCH_UPSILON::
 
-BRANCH_BETA:
+  -- ; Store the directional data at $67. Is it equal to the previous reading?
+  -- ; Yes, so branch.
+  -- NOTE: A could be one of 2 different values from above, and is used again
+  -- below in CHI
+  walking_dir_even_stationary:write(A)  -- STA $67
+  if A == ram.input_push_state:read() then  -- : CMP $26
+    goto BRANCH_CHI  -- : BEQ BRANCH_CHI
+  end
 
-    LDA $47    : BEQ BRANCH_DELTA
-    CMP.b #$01 : BEQ BRANCH_EPSILON
+  -- ; If the reading changed, we have to do all this.
+  ram.player_y_cycle_index:write(0)  -- STZ $2A
+  ram.player_x_cycle_index:write(0)  -- STZ $2B
+  moving_into_slanted_wall:write(0)  -- STZ $6B
+  link_grabbing_at_something:write(0)  -- STZ $48
 
-BRANCH_GAMMA:
+  tired_of_pushing_wall_timer:write(0x20)  -- LDX.b #$20 : STX $0371
 
-    LDA $3C : CMP.b #$09 : BNE BRANCH_ZETA
-    
-    LDX.b #$0A : STX $3C
-    
-    LDA $9CBF, X : STA $3D
+  -- ; Reset ledge timer here because direction of ... (automated?) player
+  -- ; changed?
+  ledge_jump_timer:write(0x13)  -- LDX.b #$13 : STX $0375
 
-BRANCH_ZETA:
+  ::BRANCH_CHI::
 
-    DEC $3D : BPL BRANCH_THETA
-    
+  -- NOTE: A is the same value as it was in UPSILON
+  ram.input_push_state:write(A)  -- STA $26
+
+  ::BRANCH_PHI::
+
+  unknown_B64F()  -- JSR $B64F   ; $3B64F IN ROM
+  unknown_07E245()  -- JSL $07E245 ; $3E245 IN ROM
+  unknown_B7C7()  -- JSR $B7C7   ; $3B7C7 IN ROM; Has to do with opening chests.
+  unknown_07E6A6()  -- JSL $07E6A6 ; $3E6A6 IN ROM
+
+  if unknown_master_sword_ceremony:read() == 0 then  -- LDA $0377
+    goto BRANCH_PSI  -- : BEQ BRANCH_PSI
+  end
+
+  player_y_cycle:write(0)  -- STZ $30
+  player_x_cycle:write(0)  -- STZ $31
+
+  -- ; *$382D2 LONG BRANCH LOCATION
+  ::BRANCH_PSI::
+
+  unknown_06:write(0)  -- STZ $0302
+
+  unknown_E8F0()  -- JSR $E8F0 ; $3E8F0 IN ROM
+
+  ::BRANCH_OMEGA::
+
+  -- TODO: WHY CLEAR THIS?  Do callers check for it?!
+  C = 0  -- CLC
+
+  return  -- RTS
+end
+
+--; *$39D84-$39E62 LOCAL
+--{
+-- NOTE: The alternate entry point uses 'A' as an argument!
+function unknown_attack_related_function()
+  ::BRANCH_EPSILON::
+
+  -- ; Bring Link to stop
+  -- Set movement type to 'normal'
+  player_movement_type:write(0)  -- STZ $5E
+
+  -- TODO: Clear bit 0 and 3 for some unknown reason??
+  link_grabbing_at_something:write(bit.band(  -- LDA $48 : AND.b #$F6 : STA $48
+      link_grabbing_at_something:read(), 0xF6))
+
+  -- ; Stop any animations Link is doing
+  attack_related_delay_timer:write(0)  -- STZ $3D
+  b_frames_held_and_spin_attack_nibble:write(0)  -- STZ $3C
+
+  -- ; Nullify button input on the B button
+  -- clears both B pressed this frame, and B held down one or more frames
+  BY_button_bitfield:write(bit.band(  -- LDA $3A : AND.b #$7E : STA $3A
+      BY_button_bitfield:read(), 0x7E))
+
+  -- ; Make it so Link can change direction if need be
+  -- clears the low bit
+  link_can_turn:write(bit.band(  -- LDA $50 : AND.b #$FE : STA $50
+      link_can_turn:read(), 0xFE))
+
+  goto BRANCH_ALPHA  -- BRL BRANCH_ALPHA
+
+  -- ; *$39D9F ALTERNATE ENTRY POINT
+
+  A=nil  -- TODO: PASSED IN
+  -- NOTE: A isn't set in this function, must be set prior to calling
+  if bit.band(A, link_grabbing_at_something:read()) ~= 0 then  -- BIT $48
+    goto BRANCH_BETA  -- : BNE BRANCH_BETA
+  end
+
+  -- if bits 0 or 3 are set  (but what are these bits?!)
+  if bit.band(  -- LDA $48 : AND.b #$09
+      link_grabbing_at_something:read(), 0x09) ~= 0 then
+    goto BRANCH_GAMMA  -- : BNE BRANCH_GAMMA
+  end
+
+  ::BRANCH_BETA::
+
+  A = set_when_damaging_enemies:read()  -- LDA $47
+  if A == 0 then
+    goto BRANCH_DELTA  -- : BEQ BRANCH_DELTA
+  end
+  if A == 0x01 then  -- CMP.b #$01
+    goto BRANCH_EPSILON  -- : BEQ BRANCH_EPSILON
+  end
+
+  ::BRANCH_GAMMA::
+
+  -- LDA $3C : CMP.b #$09
+  if b_frames_held_and_spin_attack_nibble:read() ~= 0x09 then
+    goto BRANCH_ZETA  -- : BNE BRANCH_ZETA
+  end
+
+  X = 0xA  -- LDX.b #$0A
+  b_frames_held_and_spin_attack_nibble:write(0x0A)  -- STX $3C
+
+  attack_related_delay_timer:write(  -- LDA $9CBF, X : STA $3D
+      unknown_array_unknown_bounds:read(X, false))
+
+  ::BRANCH_ZETA::
+
+  attack_related_delay_timer:dec()  -- DEC $3D
+  if attack_related_delay_timer:read() >= 0 then
+    goto BRANCH_THETA  -- BPL BRANCH_THETA
+  end
+
     LDA $3C : INC A : CMP.b #$0D : BNE BRANCH_KAPPA
-    
+
     LDA $7EF359 : INC A : AND.b #$FE : BEQ BRANCH_LAMBDA
-    
+
     LDA $48 : AND.b #$09 : BEQ BRANCH_LAMBDA
-    
+
     LDY.b #$01
     LDA.b #$1B
-    
+
     JSL AddWallTapSpark ; $49395 IN ROM
-    
+
     LDA $48 : AND.b #$08 : BNE BRANCH_MUNU
-    
+
     LDA $05 : JSR Player_DoSfx2
-    
+
     BRA BRANCH_XI
 
 BRANCH_MUNU:
@@ -1320,9 +1422,9 @@ BRANCH_XI:
 
     ; Do sword interaction with tiles
     LDY.b #$01
-    
+
     JSR $D077   ; $3D077 IN ROM
-    
+
 BRANCH_LAMBDA:
 
     LDA.b #$0A
@@ -1330,9 +1432,9 @@ BRANCH_LAMBDA:
 BRANCH_KAPPA:
 
     STA $3C : TAX
-    
+
     LDA $9CBF, X : STA $3D
-    
+
 BRANCH_THETA:
 
     BRA BRANCH_RHO
@@ -1340,47 +1442,47 @@ BRANCH_THETA:
 BRANCH_DELTA:
 
     LDA.b #$09 : STA $3C
-    
+
     LDA.b #$01 : TSB $50
-    
+
     STZ $3D
-    
+
     LDA $5E
-    
+
     CMP.b #$04 : BEQ BRANCH_RHO
     CMP.b #$10 : BEQ BRANCH_RHO
-    
+
     LDA.b #$0C : STA $5E
-    
+
     LDA $7EF359 : INC A : AND.b #$FE : BEQ BRANCH_ALPHA
-    
+
     LDX.b #$04
 
 BRANCH_PHI:
 
     LDA $0C4A, X
-    
+
     CMP.b #$30 : BEQ BRANCH_ALPHA
     CMP.b #$31 : BEQ BRANCH_ALPHA
-    
+
     DEX : BPL BRANCH_PHI
-    
+
     LDA $79 : CMP.b #$06 : BCC BRANCH_CHI
-    
+
     LDA $1A : AND.b #$03 : BNE BRANCH_CHI
-    
+
     JSL AncillaSpawn_SwordChargeSparkle
 
 BRANCH_CHI:
 
     LDA $79 : CMP.b #$40 : BCS BRANCH_ALPHA
-    
+
     INC $79 : LDA $79 : CMP.b #$30 : BNE BRANCH_ALPHA
-    
+
     LDA.b #$37 : JSR Player_DoSfx2
-    
+
     JSL AddChargedSpinAttackSparkle
-    
+
     BRA BRANCH_ALPHA
 
 BRANCH_RHO:
@@ -1388,7 +1490,7 @@ BRANCH_RHO:
     JSR $9E63 ; $39E63 IN ROM
 
 BRANCH_ALPHA:
-    
+
     RTS
 }
 
@@ -1397,59 +1499,59 @@ BRANCH_ALPHA:
     ; sword
     LDA $7EF359 : BEQ BRANCH_39D84_BRANCH_ALPHA ; RTS
     CMP.b #$FF  : BEQ BRANCH_39D84_BRANCH_ALPHA
-    
+
     CMP.b #$02 : BCS BRANCH_ALPHA
 
 BRANCH_GAMMA:
 
     LDY.b #$27
-    
+
     LDA $3C : STA $02 : STZ $03
-    
+
     CMP.b #$09 : BEQ BRANCH_39D84_BRANCH_ALPHA : bCC BRANCH_BETA
-    
+
     LDA $02 : SUB.b #$0A : STA $02
-    
+
     LDY.b #$03
 
 BRANCH_BETA:
 
     REP #$30
-    
+
     LDA $2F : AND.w #$00FF : TAX
-    
+
     LDA $0DA030, X : STA $04
-    
+
     TYA : AND.w #$00FF : ASL A : ADD $04 : TAX
-    
+
     LDA $0D9EF0, X : ADD $02 : TAX
-    
+
     SEP #$20
-    
+
     LDA $0D98F3, X : STA $44
     LDA $0D9AF2, X : STA $45
-    
+
     SEP #$10
-    
+
     RTS
 
 BRANCH_ALPHA:
 
     LDA $3C : CMP.b #$09 : BCS BRANCH_GAMMA
-    
+
     ASL A : STA $04
-    
+
     LDA $2F : LSR A : STA $0E
-    
+
     ASL #3 : ADD $0E : ASL A : ADD $04 : TAX
-    
+
     LDA $0DAC45, X : CMP.b #$FF : BEQ BRANCH_DELTA
-    
+
     TXA : LSR A : TAX
-    
+
     LDA $0DAC8D, X : STA $44
     LDA $0DACB1, X : STA $45
-    
+
 parallel pool LinkItem_Rod:
 
 .quick_return
@@ -1469,22 +1571,22 @@ BRANCH_DELTA:
 BRANCH_ALPHA:
 
     LDA $02E0 : BEQ BRANCH_BETA
-    
+
     LDA $0303
-    
+
     CMP.b #$0B : BEQ BRANCH_BETA
     CMP.b #$14 : BEQ BRANCH_BETA
-    
+
     RTS
 
 BRANCH_BETA:
 
     LDY $03FC : BEQ BRANCH_GAMMA
-    
+
     LDA $02E0 : BNE BRANCH_GAMMA
-    
+
     CPY.b #$02 : BEQ BRANCH_DELTA
-    
+
     BRL LinkItem_Shovel
 
 BRANCH_DELTA:
@@ -1494,26 +1596,26 @@ BRANCH_DELTA:
 BRANCH_GAMMA:
 
     LDY $0304 : CMP $0303 : BEQ BRANCH_EPSILON
-    
+
     LDA $0304 : CMP.b #$08 : BNE BRANCH_ZETA
-    
+
     ; Does Link have the flute?
     LDA $7EF34C : AND.b #$02 : BEQ BRANCH_ZETA
-    
+
     LDA $3A : AND.b #$BF : STA $3A
 
 BRANCH_ZETA:
 
     LDA $0304 : CMP.b #$13 : BNE BRANCH_EPSILON
-    
+
     LDA $55 : BEQ BRANCH_EPSILON
-    
+
     JSR $AE47 ; $3AE47 IN ROM
 
 BRANCH_EPSILON:
 
     LDA $0301 : ORA $037A : BNE BRANCH_THETA
-    
+
     LDY $0303 : STY $0304
 
 BRANCH_THETA:
@@ -1530,9 +1632,9 @@ BRANCH_KAPPA:
 BRANCH_LAMBDA:
 
     DEY : BMI BRANCH_IOTA
-    
+
     TYA : ASL A : TAX
-    
+
     JMP ($9AE6, X) ; $39AE6, X; USE JUMP TABLE
 
 BRANCH_IOTA:
@@ -1549,24 +1651,24 @@ BRANCH_IOTA:
     ; Check Link's invincibility status.
     ; He's not in the cape form..
     LDA $55 : BEQ BRANCH_BETA
-    
+
     ; He is in cape form (invisible and invincible).
     ; Does Link need to transform into the cape form?
     LDA $0304 : CMP.b #$13 : BNE BRANCH_BETA
-    
+
     ; Link might need to transform, but if he's already transformed, then not.
     CMP $0303 : BNE BRANCH_GAMMA
-    
+
     ; It seems to me that the load is unnecessary... correct me if I'm
     ; wrong.
     DEC $4C : LDA $4C : BNE BRANCH_DELTA
-    
+
     LDA $7EF37B : TAY
-    
+
     LDA LinkItem_Cape.mp_depletion_timers, Y : STA $4C
-    
+
     LDA $7EF36E : BEQ BRANCH_DELTA
-    
+
     DEC A : STA $7EF36E : BNE BRANCH_DELTA
 
 BRANCH_GAMMA:

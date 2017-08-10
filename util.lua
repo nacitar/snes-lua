@@ -22,6 +22,14 @@ function pretty_string(table)
   return tostring(table)
 end
 
+function Set (list)
+  local set = {}
+  for _, l in ipairs(list) do
+    set[l] = true
+  end
+  return set
+end
+
 -- class() uses two tricks. It allows you to construct a class using the call
 -- notation (like Dog('fido')) by giving the class itself a metatable
 -- which defines __call. It handles inheritance by copying the fields of the
@@ -111,4 +119,5 @@ end
 return {
   class = class,
   pretty_string = pretty_string,
+  Set = Set,
 }
