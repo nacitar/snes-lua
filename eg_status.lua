@@ -6,7 +6,6 @@ local var = {
   -- some reason, rather than setting to 1 like a bool
   queued_layer_change = ram.Unsigned(0x7E047A, 2),
   room_upper_layer = ram.Unsigned(0x7E044A, 2),
-  pseudo_bg_level = ram.Unsigned(0x7E0476, 2),
   player_state = ram.Unsigned(0x7E005D, 1),
 }
 
