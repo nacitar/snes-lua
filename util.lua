@@ -102,17 +102,17 @@ end
 --  function A:test()
 --    print(self.x)
 --  end
--- 
+--
 --  function A:__add(b)
 --    return A(self.x + b.x)
 --  end
--- 
+--
 --  B = class(A)
 --  function B:__init(x,y)
 --    A.__init(self,x)
 --    self.y = y
 --  end
--- 
+--
 --  x=A(5)
 --  y=B(6)
 --  z=x + y
