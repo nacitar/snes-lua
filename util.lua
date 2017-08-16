@@ -1,5 +1,7 @@
 #!/usr/bin/env lua
 
+local gui = require 'gui'
+
 function pretty_string(table)
   -- build a string otherwise
   local result = nil
@@ -116,8 +118,19 @@ end
 --  z=x + y
 --  z:test()
 --
+
+
+function draw_text(base_x, base_y, lines)
+  for i, line in pairs(lines) do
+    local y = base_y + (8 * (i - 1))
+    gui.text(base_x, y, line)
+  end
+end
+
+
 return {
   class = class,
   pretty_string = pretty_string,
   Set = Set,
+  draw_text = draw_text,
 }

@@ -1,5 +1,4 @@
 local ram = require 'ram'
-local util = require 'util'
 
 local var = {
   -- can be > 1 if it's queued and then you jump... code just adds 1 to it for
@@ -62,16 +61,7 @@ function stored_eg_string()
   return ''
 end
 
-local function draw_text(base_x, base_y, lines)
-  for i, line in pairs(lines) do
-    local y = base_y + (8 * (i - 1))
-    gui.text(base_x, y, line)
-  end
-end
-
-while true do
-  main()
-  status = stored_eg_string()
-  draw_text(2, 120, {'Stored EG: ' .. status})
-  snes9x.frameadvance()
-end
+return {
+  stored_eg_string = stored_eg_string,
+  main = main,
+}
