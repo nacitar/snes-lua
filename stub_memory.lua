@@ -1,7 +1,5 @@
 #!/usr/bin/env lua
 
-local string = require 'string'
-
 if memory == nil then
   -- simple stub, doesn't do any conversions or use a real buffer
   -- simple key/value pair.  accessing the same location as multiple types

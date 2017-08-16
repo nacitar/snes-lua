@@ -1,13 +1,12 @@
 #!/usr/bin/env lua
 
-local util = require 'util'
-local string = require 'string'
+local class = require 'class'
 
 if not memory then
   memory = require 'stub_memory'
 end
 
-Array = util.class()
+Array = class()
 function Array:__init(address, data_size, length)
   if type(address) ~= 'number' then
     error('address must be a number')
@@ -67,7 +66,7 @@ function Array:write(index, value)
   end
 end
 
-Field = util.class(Array)
+Field = class(Array)
 function Field:__init(address, size, signed)
   if type(signed) ~= 'boolean' then
     error('signed must be boolean')
@@ -94,11 +93,11 @@ function Field:dec()
   self:sub(1)
 end
 
-Unsigned = util.class(Field)
+Unsigned = class(Field)
 function Unsigned:__init(address, size)
   Field.__init(self, address, size, false)
 end
-Signed = util.class(Field)
+Signed = class(Field)
 function Signed:__init(address, size)
   Field.__init(self, address, size, true)
 end

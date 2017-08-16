@@ -1,1 +1,1 @@
-# snes-lua
+# snes-util-lua
