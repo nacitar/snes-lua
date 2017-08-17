@@ -1,9 +1,8 @@
 #!/usr/bin/env lua
-
-local class = require 'class'
-
+local THIS_DIR = (... or '1'):match("(.-)[^%.]+$")
+local class = require(THIS_DIR .. 'class')
 if not memory then
-  memory = require 'stub_memory'
+  memory = require(THIS_DIR ..'stub_memory')
 end
 
 Array = class()

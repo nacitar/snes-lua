@@ -1,6 +1,7 @@
 #!/usr/bin/env lua
+local THIS_DIR = (... or '1'):match("(.-)[^%.]+$")
 
-local gui = require 'gui'
+local gui = require(THIS_DIR .. 'gui')
 
 function pretty_string(table)
   -- build a string otherwise

@@ -1,4 +1,5 @@
 #!/usr/bin/env lua
+local THIS_DIR = (...):match("(.-)[^%.]+$")
 
 -- class.lua
 -- Compatible with Lua 5.1 (not 5.0).
@@ -19,7 +20,7 @@
 --
 -- -- EXAMPLE
 --
---  local class = require 'class'
+--  local class = require('class')
 --
 --  A = class()
 --  function A:__init(x)

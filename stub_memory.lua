@@ -1,4 +1,5 @@
 #!/usr/bin/env lua
+local THIS_DIR = (... or '1'):match("(.-)[^%.]+$")
 
 if memory == nil then
   -- simple stub, doesn't do any conversions or use a real buffer
