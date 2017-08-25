@@ -1,7 +1,8 @@
-#!/usr/bin/env lua
-local THIS_DIR = (... or '1'):match("(.-)[^%.]+$")
+local THIS_DIR = (... or ''):match("(.-)[^%.]+$") or '.'
 
-local gui = require('gui')  -- snes9x
+if not gui then
+  gui = require(THIS_DIR .. 'stub_gui')
+end
 
 function pretty_string(table)
   -- build a string otherwise

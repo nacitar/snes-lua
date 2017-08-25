@@ -1,14 +1,17 @@
-#!/usr/bin/env lua
-local THIS_DIR = (... or '1'):match("(.-)[^%.]+$")
+local THIS_DIR = (... or ''):match("(.-)[^%.]+$") or '.'
+
 local class = require(THIS_DIR .. 'class')
 if not memory then
-  memory = require(THIS_DIR ..'stub_memory')
+  memory = require(THIS_DIR .. 'stub_memory')
 end
 
 Array = class()
 function Array:__init(address, data_size, length)
   if type(address) ~= 'number' then
     error('address must be a number')
+  end
+  if address < 0x7E0000 or address > 0x7FFFFF then
+    error('Address ' .. address .. ' not in valid range.')
   end
   if type(data_size) ~= 'number' then
     error('size must be a number')
@@ -20,7 +23,7 @@ function Array:__init(address, data_size, length)
     error(('invalid data size (%d): can only be 1, 2, or 4 bytes'):format(
         data_size))
   end
-  self._address = address
+  self._address = (address - 0x7E0000)
   self._data_size = data_size
   self._length = length
 end
@@ -39,29 +42,29 @@ function Array:read(index, signed)
   local address = self:indexed_address(index)
   if self._data_size == 1 then
     if signed then
-      return memory.readbytesigned(address)
+      return (memory.read_s8 or memory.readbytesigned)(address)
     end
-    return memory.readbyte(address)
+    return (memory.read_u8 or memory.readbyte)(address)
   elseif self._data_size == 2 then
     if signed then
-      return memory.readwordsigned(address)
+      return (memory.read_s16_le or memory.readwordsigned)(address)
     end
-    return memory.readword(address)
+    return (memory.read_u16_le or memory.readword)(address)
   elseif self._data_size == 4 then
     if signed then
-      return memory.readdwordsigned(address)
+      return (memory.read_s32_le or memory.readdwordsigned)(address)
     end
-    return memory.readdword(address)
+    return (memory.read_u32_le or memory.readdword)(address)
   end
 end
 function Array:write(index, value)
   local address = self:indexed_address(index)
   if self._data_size == 1 then
-    memory.writebyte(address, value)
+    (memory.write_u8 or memory.writebyte)(address, value)
   elseif self._data_size == 2 then
-    memory.writeword(address, value)
+    (memory.write_u16_le or memory.writeword)(address, value)
   elseif self._data_size == 4 then
-    memory.writedword(address, value)
+    (memory.write_u32_le or memory.writedword)(address, value)
   end
 end
 

@@ -1,5 +1,4 @@
-#!/usr/bin/env lua
-local THIS_DIR = (...):match("(.-)[^%.]+$")
+local THIS_DIR = (... or ''):match("(.-)[^%.]+$") or '.'
 
 -- class.lua
 -- Compatible with Lua 5.1 (not 5.0).
