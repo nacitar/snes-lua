@@ -4,6 +4,12 @@ if not gui then
   gui = require(THIS_DIR .. 'stub_gui')
 end
 
+if gui.defaultTextBackground then
+  gui.defaultTextBackground(nil)
+end
+
+local pixelText = (gui.pixelText or gui.text)
+
 function pretty_string(table)
   -- build a string otherwise
   local result = nil
@@ -37,7 +43,8 @@ end
 function draw_text(base_x, base_y, lines)
   for i, line in pairs(lines) do
     local y = base_y + (8 * (i - 1))
-    gui.text(base_x, y, line)
+    -- color arg ignored in 9x.. but no black outline in bizhawk
+    pixelText(base_x, y, line, 'yellow')
   end
 end
 
