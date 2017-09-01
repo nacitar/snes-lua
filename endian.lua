@@ -74,7 +74,7 @@ function serialize(value, is_big, is_signed, size)
       current_byte = (value % 0x100)  -- faster than bit.band(value, 0xFF)
       value = (value - current_byte) / 0x100  -- force integer division
       if is_negative then
-        -- convert to 2's complement... bnot() now, +1 later
+        -- convert to 2's complement... bnot() bytes, propagating a single add
         current_byte = 0xFF - current_byte  -- fast single byte bnot
         if need_1_added then
           if current_byte == 0xFF then
