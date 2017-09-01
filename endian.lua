@@ -14,7 +14,6 @@ end
 
 function deserialize(binary_value, is_big, is_signed)
   assert(#binary_value > 0, 'no data to deserialize')
-
   local first, last, step
   if is_big then
     first, last, step = 1, #binary_value, 1
@@ -43,7 +42,25 @@ function deserialize(binary_value, is_big, is_signed)
   return result
 end
 
-function serialize(value, is_big, size)
+
+-- This function always either writes the value into the smallest number of
+-- bytes in which it can fit, or the size provided _IF_ it can fit in it.
+--
+-- __IF__ the assert is commented out, you can indeed serialize negative
+-- numbers as unsigned, and this will result in a value equal in size to the
+-- minimum number of bytes needed to represent the abs() of that value (or the
+-- size passed if larger) and that value will be one more than the maximum
+-- value representable by this many bytes (that value being 2^num_bits) minus
+-- the abs() of the value provided.
+-- Useful examples:
+--   -1 ==> 0xFF
+--   -1 with size 2 ==> 0xFFFF
+--   -256 ==> 0xFF00
+-- This sounds confusing though it's pretty simple... but I fear accidental
+-- uses of this rather than clever ones, so the assert remain.  As an aside,
+-- provided that you do in fact specify a size, it makes it behave just like
+-- it would in C/C++, where -2 with a 4-byte size yields 0xFFFE.  =)
+function serialize(value, is_big, is_signed, size)
   local result = {}
   local pad_byte = 0x00
   local INSERTER = is_big and prepend_table or append_table
@@ -51,6 +68,8 @@ function serialize(value, is_big, size)
     TABLE_INSERT(result, 0x00)
   else
     local is_negative = (value < 0)
+     assert((not is_negative or is_signed), -- or size ~= nil,
+        "Cannot serialize a negative value as unsigned.")
     local need_1_added = is_negative
     if is_negative then
       pad_byte = 0xFF
@@ -75,9 +94,9 @@ function serialize(value, is_big, size)
       end
       INSERTER(result, current_byte)
     end
-    -- if the high byte doesn't indicate negative, and we aren't already
-    -- padding on another byte... make it pad one
-    if is_negative and current_byte < 0x80 and (
+    -- if the negativity doesn't match what the high byte represents, and we
+    -- aren't already padding another byte... make it pad one to fix this
+    if is_signed and is_negative ~= (current_byte >= 0x80) and (
       not size or size <= #result) then
       size = #result + 1
     end
