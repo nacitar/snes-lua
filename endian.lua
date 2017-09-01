@@ -1,118 +1,96 @@
 
-local bit = require('bit')
+local TABLE_INSERT = table.insert
+local function bnot_byte(value)
+    assert(value >= 0 and value <= 0xFF, 'value out of range: ' .. value)
+    return (0xFF - value)
+end
+local function prepend_table(table, value)
+  TABLE_INSERT(table, 1, value)
+end
+local function append_table(table, value)
+  TABLE_INSERT(table, value)
+end
 
-function read_little(byte_list)
-  local result = 0
-  local multiplier = 0x1
-  for i, value in ipairs(byte_list) do
-    assert(value >= 0 and value <= 0xFF, 'value out of range: ' .. value)
-    result = result + value * multiplier
-    multiplier = multiplier * 0x100
+
+function deserialize(binary_value, is_big, is_signed)
+  assert(#binary_value > 0, 'no data to deserialize')
+
+  local first, last, step
+  if is_big then
+    first, last, step = 1, #binary_value, 1
+  else
+    -- iterate in reverse for little endian.  we can do this just as well if
+    -- iterating forward, however doing this change here moves the if/else
+    -- branching OUTSIDE the loop, so we do the conditional part once instead
+    -- of for every byte
+    first, last, step = #binary_value, 1, -1
   end
-  return result
-end
-function read_negative_little(byte_list)
+  -- checking index 'first' because the iteration order matches big endian
+  local is_negative = (is_signed and binary_value:byte(first) >= 0x80)
   local result = 0
-  local multiplier = 0x1
-  for _, value in ipairs(byte_list) do
+  for i = first, last, step do
+    local value = binary_value:byte(i)
     assert(value >= 0 and value <= 0xFF, 'value out of range: ' .. value)
-    -- two's complement... so we'll parse the bnot of the value instead
-    -- then negate this result when we're done, and add 1 to it.
-    result = result + bit.band(bit.bnot(value), 0xFF) * multiplier
-    multiplier = multiplier * 0x100
-  end
-  return -(result + 1)
-end
-function read_big(byte_list)
-  local result = 0
-  for i, value in ipairs(byte_list) do
-    assert(value >= 0 and value <= 0xFF, 'value out of range: ' .. value)
+    if is_negative then
+      -- two's complement... do the bnot now, and add the 1 when we're done
+      value = bnot_byte(value)
+    end
     result = result * 0x100 + value
   end
+  if is_negative then
+    result = -(result+1)
+  end
   return result
 end
-function read_negative_big(byte_list)
-  local result = 0
-  for _, value in ipairs(byte_list) do
-    assert(value >= 0 and value <= 0xFF, 'value out of range: ' .. value)
-    -- two's complement... so we'll parse the bnot of the value instead
-    -- then negate this result when we're done, and add 1 to it.
-    result = result * 0x100 + bit.band(bit.bnot(value), 0xFF)
-  end
-  return -(result + 1)
-end
-function read_big_signed(byte_list)
-  if #byte_list > 0 and byte_list[1] > 0x7F then
-    return read_negative_big(byte_list)
-  end
-  return read_big(byte_list)
-end
-function read_little_signed(byte_list)
-  if #byte_list > 0 and byte_list[#byte_list] > 0x7F then
-    return read_negative_little(byte_list)
-  end
-  return read_little(byte_list)
-end
-function serialize(value, is_big)
+
+function serialize(value, is_big, size)
   local result = {}
+  local pad_byte = 0x00
+  local INSERTER = is_big and prepend_table or append_table
   if value == 0 then
-    table.insert(result, 0)
+    TABLE_INSERT(result, 0x00)
   else
     local is_negative = (value < 0)
-    local fixed_neg = false
+    local need_1_added = is_negative
     if is_negative then
-      value = -value
+      pad_byte = 0xFF
+      value = -value  -- positive... so we can derive its 2's complement
     end
-
-    local low_byte = nil
+    local current_byte
     while value ~= 0 do
-      low_byte = value % 0x100
-      -- subtract off the excess to force integer division
-      value = (value - low_byte) / 0x100
+      current_byte = (value % 0x100)  -- faster than bit.band(value, 0xFF)
+      value = (value - current_byte) / 0x100  -- force integer division
       if is_negative then
-        -- the bnot doesn't get us the right bits until we add 1
-        low_byte = bit.bnot(low_byte) % 0x100
-        if not fixed_neg then
-          if low_byte == 0xFF then
-            print(value)
-            low_byte = 0
+        -- convert to 2's complement... bnot() now, +1 later
+        current_byte = bnot_byte(current_byte)
+        if need_1_added then
+          if current_byte == 0xFF then
+            current_byte = 0
+            -- add had a carry, so don't clear need_1_added
           else
-            low_byte = low_byte + 1
-            fixed_neg = true
+            current_byte = current_byte + 1
+            need_1_added = false
           end
         end
       end
-      if is_big then
-        table.insert(result, 1, low_byte)
-      else
-        table.insert(result, low_byte)
-      end
+      INSERTER(result, current_byte)
     end
-    if is_negative and not fixed_neg then
-      -- The only way this could happen is if the last byte processed is 0x00,
-      -- because after the bnot that would make it 0xFF.. but the loop would
-      -- have stopped by then, so if this ever happens there be gremlins
-      error('If you see this, read the comment in the code: ' .. value)
-    end
-    -- TODO: what? if not fixed_neg
-    -- test this more fully, too!
-    -- if this doesn't indicate negative, the next byte must
-    if is_negative and low_byte < 0x80 then
-      if is_big then
-        table.insert(result, 1, 0xFF)
-      else
-        table.insert(result, 0xFF)
-      end
+    -- if the high byte doesn't indicate negative, and we aren't already
+    -- padding on another byte... make it pad one
+    if is_negative and current_byte < 0x80 and (
+      not size or size <= #result) then
+      size = #result + 1
     end
   end
-
+  if size then
+    while #result < size do
+      INSERTER(result, pad_byte)
+    end
+  end
   return string.char(unpack(result))
 end
 
 return {
-    read_little = read_little,
-    read_big = read_big,
-    read_little_signed = read_little_signed,
-    read_big_signed = read_big_signed,
     serialize = serialize,
+    deserialize = deserialize,
 }
