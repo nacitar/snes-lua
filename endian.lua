@@ -7,23 +7,29 @@ local function append_table(table, value)
   TABLE_INSERT(table, value)
 end
 
-function deserialize(binary_value, is_big, is_signed)
-  assert(#binary_value > 0, 'no data to deserialize')
+-- byte_list can be a table of numbers between 0x00 and 0xFF, or a string
+-- result is a number
+function deserialize(byte_list, is_big, is_signed)
+  assert(#byte_list > 0, 'no data to deserialize')
+  if type(byte_list.byte) == 'function' then
+    -- string, or something similar... get the bytes.
+    byte_list = {byte_list:byte(1, #byte_list)}
+  end
   local first, last, step
   if is_big then
-    first, last, step = 1, #binary_value, 1
+    first, last, step = 1, #byte_list, 1
   else
     -- iterate in reverse for little endian.  we can do this just as well if
     -- iterating forward, however doing this change here moves the if/else
     -- branching OUTSIDE the loop, so we do the conditional part once instead
     -- of for every byte
-    first, last, step = #binary_value, 1, -1
+    first, last, step = #byte_list, 1, -1
   end
   -- checking index 'first' because the iteration order matches big endian
-  local is_negative = (is_signed and binary_value:byte(first) >= 0x80)
+  local is_negative = (is_signed and byte_list[first] >= 0x80)
   local result = 0
   for i = first, last, step do
-    local value = binary_value:byte(i)
+    local value = byte_list[i]
     assert(value >= 0 and value <= 0xFF, 'value out of range: ' .. value)
     if is_negative then
       -- two's complement... do the bnot now, and add the 1 when we're done
@@ -54,12 +60,15 @@ end
 -- uses of this rather than clever ones, so the assert remain.  As an aside,
 -- provided that you do in fact specify a size, it makes it behave just like
 -- it would in C/C++, where -2 with a 4-byte size yields 0xFFFE.  =)
+--
+-- value is a number, result is a table of values between 0x00 and 0xFF
+-- if you want a string, use string.char(unpack(result))
 function serialize(value, is_big, is_signed, size)
-  local result = {}
+  local byte_list = {}
   local pad_byte = 0x00
   local INSERTER = is_big and prepend_table or append_table
   if value == 0 then
-    TABLE_INSERT(result, 0x00)
+    TABLE_INSERT(byte_list, 0x00)
   else
     local is_negative = (value < 0)
      assert((not is_negative or is_signed), -- or size ~= nil,
@@ -86,21 +95,21 @@ function serialize(value, is_big, is_signed, size)
           end
         end
       end
-      INSERTER(result, current_byte)
+      INSERTER(byte_list, current_byte)
     end
     -- if the negativity doesn't match what the high byte represents, and we
     -- aren't already padding another byte... make it pad one to fix this
     if is_signed and is_negative ~= (current_byte >= 0x80) and (
-      not size or size <= #result) then
-      size = #result + 1
+      not size or size <= #byte_list) then
+      size = #byte_list + 1
     end
   end
   if size then
-    while #result < size do
-      INSERTER(result, pad_byte)
+    while #byte_list < size do
+      INSERTER(byte_list, pad_byte)
     end
   end
-  return string.char(unpack(result))
+  return byte_list
 end
 
 return {
