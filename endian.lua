@@ -1,16 +1,11 @@
-
+-- just some helpers to pretty up code
 local TABLE_INSERT = table.insert
-local function bnot_byte(value)
-    assert(value >= 0 and value <= 0xFF, 'value out of range: ' .. value)
-    return (0xFF - value)
-end
 local function prepend_table(table, value)
   TABLE_INSERT(table, 1, value)
 end
 local function append_table(table, value)
   TABLE_INSERT(table, value)
 end
-
 
 function deserialize(binary_value, is_big, is_signed)
   assert(#binary_value > 0, 'no data to deserialize')
@@ -32,7 +27,7 @@ function deserialize(binary_value, is_big, is_signed)
     assert(value >= 0 and value <= 0xFF, 'value out of range: ' .. value)
     if is_negative then
       -- two's complement... do the bnot now, and add the 1 when we're done
-      value = bnot_byte(value)
+      value = 0xFF - value  -- fast single byte bnot
     end
     result = result * 0x100 + value
   end
@@ -41,7 +36,6 @@ function deserialize(binary_value, is_big, is_signed)
   end
   return result
 end
-
 
 -- This function always either writes the value into the smallest number of
 -- bytes in which it can fit, or the size provided _IF_ it can fit in it.
@@ -81,7 +75,7 @@ function serialize(value, is_big, is_signed, size)
       value = (value - current_byte) / 0x100  -- force integer division
       if is_negative then
         -- convert to 2's complement... bnot() now, +1 later
-        current_byte = bnot_byte(current_byte)
+        current_byte = 0xFF - current_byte  -- fast single byte bnot
         if need_1_added then
           if current_byte == 0xFF then
             current_byte = 0
