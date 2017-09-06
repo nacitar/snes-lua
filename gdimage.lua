@@ -46,24 +46,24 @@ function GDImage:load_file(filename)
     -- color header
     if self.is_palette then
       -- redundant flag; should always be 0 for palette
-      local is_truecolor = read_BE(data:sub(offset+1, offset+1))
+      local is_truecolor = read_BE(data:sub(offset + 1, offset + 1))
       assert(is_truecolor == 0,
           'Truecolor flag should not be set for palette image, but it is...')
-      local color_count = read_BE(data:sub(offset+2, offset+3))
+      self.count = read_BE(data:sub(offset + 2, offset + 3))
       -- what is this?!?! says it's a palette index, but it's huge!
-      self.transparent = read_BE(data:sub(offset+4, offset+7))
+      self.transparent = read_BE(data:sub(offset + 4, offset + 7))
       offset = offset + 7
-      for i = 1, color_count do
-        table.insert(self.palette, read_BE(data:sub(offset+i, offset+i+3)))
+      for i = 1, self.count do
+        table.insert(self.palette, read_BE(data:sub(offset + 1, offset + 4)))
+        offset = offset + 4
       end
-      offset = offset + color_count * 4
     else
       -- redundant flag; should always be 1 for truecolor
-      local is_truecolor = read_BE(data:sub(offset+1, offset+1))
+      local is_truecolor = read_BE(data:sub(offset + 1, offset + 1))
       assert(is_truecolor == 1,
           'Truecolor flag should be set for truecolor image, but it is not...')
       -- what is this?!?! says it's an ARGB color
-      self.transparent = read_BE(data:sub(offset+2, offset+5))
+      self.transparent = read_BE(data:sub(offset + 2, offset + 5))
       offset = offset + 5
     end
   else
@@ -78,15 +78,16 @@ function GDImage:load_file(filename)
     offset = 7
     for i = 1, self.count do
       -- only RGB
-      table.insert(self.palette, read_BE(data:sub(offset+i, offset+i+2)))
+      table.insert(self.palette, read_BE(data:sub(offset + 1, offset + 3)))
+      offset = offset + 3
     end
-    offset = offset + color_count * 3
   end
 
   -- pixel data
   if self.is_palette then
     for i = 1, (self.width * self.height) do
-      table.insert(self.pixel_data, read_BE(data:sub(offset+i, offset+i)))
+      table.insert(self.pixel_data, read_BE(data:sub(offset + 1, offset + 1)))
+      offset = offset + 1
     end
   else
     for i = 1, (self.width * self.height) do
