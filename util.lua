@@ -48,6 +48,20 @@ function draw_text(base_x, base_y, lines)
   end
 end
 
+function tohex(str)
+  local result = {}
+  local CHARSET='0123456789ABCDEF'
+  for i = 1,#str do
+    local value = str:byte(i)
+    local high = bit.rshift(value, 4) + 1  -- stupid lua
+    local low = bit.band(value, 0x0F) + 1  -- stupid lua
+    local highnib = CHARSET:sub(high,high):byte()
+    local lownib = CHARSET:sub(low,low):byte()
+    table.insert(result, CHARSET:sub(high,high):byte())
+    table.insert(result, CHARSET:sub(low,low):byte())
+  end
+  return string.char(unpack(result))
+end
 
 return {
   pretty_string = pretty_string,
