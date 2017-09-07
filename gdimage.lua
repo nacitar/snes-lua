@@ -33,7 +33,7 @@ end
 
 -- GD 1.0 is untested
 function GDImage:load_file(filename)
-  local file = assert(io.open(filename, 'r'),
+  local file = assert(io.open(filename, 'rb'),
       'Error loading file: ' .. filename)
   data = file:read("*all")
   file:close()
@@ -111,7 +111,6 @@ end
 
 function GDImage:convert_to_truecolor()
   if self.is_palette then
-    print('MOOO', #self.pixel_data)
     self.is_palette = false
     for i = 1, #self.pixel_data do
       self.pixel_data[i] = self.palette[self.pixel_data[i] + 1]
