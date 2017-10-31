@@ -1,5 +1,10 @@
 local THIS_DIR = (... or ''):match("(.-)[^%.]+$") or '.'
 
+-- TODO:
+-- enable loading a png and converting to gd, for snes9x
+-- refactor THIS_DIR stuff to have a better name... PKG_PATH? MOD_PATH? eh?
+-- test drawing persistence (probably none)
+
 -- only supporting gd 1.0/2.0 and not gd2
 -- https://github.com/libgd/libgd/blob/master/src/gd_gd.c
 

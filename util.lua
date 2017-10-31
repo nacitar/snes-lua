@@ -48,6 +48,10 @@ function draw_text(base_x, base_y, lines)
   end
 end
 
+function draw_text_above(base_x, base_y, lines)
+  draw_text(base_x, base_y - (8 * #lines), lines)
+end
+
 function tohex(str)
   local result = {}
   local CHARSET='0123456789ABCDEF'
@@ -67,4 +71,5 @@ return {
   pretty_string = pretty_string,
   Set = Set,
   draw_text = draw_text,
+  draw_text_above = draw_text_above,
 }
