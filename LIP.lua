@@ -1,3 +1,6 @@
+local THIS_DIR = (... or ''):match("(.-)[^%.]+$") or '.'
+
+local util = require(THIS_DIR .. 'util')
 --[[
 	Copyright (c) 2012 Carreras Nicolas
 
@@ -23,6 +26,7 @@
 -- It has never been that simple to use INI files with Lua.
 --@author Dynodzzo
 --@note(nacitar): Changed file mode for write method to remove +b
+--@note(nacitar): Changed file:lines to read to a string first, to avoid bizhawk mode for write method to remove +b
 --https://github.com/Dynodzzo/Lua_INI_Parser
 local LIP = {};
 
@@ -34,7 +38,7 @@ function LIP.load(fileName)
 	local file = assert(io.open(fileName, 'r'), 'Error loading file : ' .. fileName);
 	local data = {};
 	local section;
-	for line in file:lines() do
+	for line in util.file_line_iterator(file) do
 		local tempSection = line:match('^%[([^%[%]]+)%]$');
 		if(tempSection)then
 			section = tonumber(tempSection) and tonumber(tempSection) or tempSection;
